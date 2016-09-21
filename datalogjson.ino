@@ -73,62 +73,9 @@ void readDS3231time(byte *second, byte *minute, byte *hour, byte *dayOfWeek, byt
   *year = bcdToDec(Wire.read());
 }
 
-//const int chipSelect = 4;
-
-void setup() {
-  Wire.begin();
-  // Open serial communications and wait for port to open:
-  Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
-  pinMode(2, INPUT_PULLUP);
-  pinMode(3, INPUT_PULLUP);
-  pinMode(4, INPUT_PULLUP);
-  pinMode(5, INPUT_PULLUP);
-  pinMode(6, INPUT_PULLUP);
-  pinMode(7, INPUT_PULLUP);
-  // Uncomment setDS3231time to set the RTC. Recomment to let clock run.
-  // DS3231 seconds, minutes, hours, day(1=Sunday, 7=Saturday), date, month, year
-  //setDS3231time(30,13,22,3,23,8,16);
-
-  // The SD card code below was not robust for so I used a serial logger instead (OpenLog)
-  // You may have beter luck...
-  //Serial.print("Initializing SD card...");
-
-  //pinMode(10, OUTPUT); // change this to 53 on a mega  // don't follow this!!
-  //digitalWrite(10, HIGH); // Add this line
-
-  // see if the card is present and can be initialized:
-  //if (!SD.begin(chipSelect)) {
-  //  Serial.println("Card failed, or not present");
-    // don't do anything more:
-  //  return;
-  //}
-  //Serial.println("card initialized.");
-}
-
-void loop() {
-  // make a string for assembling the data to log:
-  //String dataString = "";
-  int analogPins = 4;
-  int digitalPins = 14;
+void jsonTimestamp()
+{
   byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-
-  // from http://forum.arduino.cc/index.php?topic=113656.0
-  #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
-    // Code in here will only be compiled if an Arduino Uno (or older) is used.
-  #endif
-  
-  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-    // Code in here will only be compiled if an Arduino Mega is used.
-    analogPins = 16;
-    digitalPins = 54;
-  #endif
-
-  #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__)
-    // Code in here will only be compiled if an Arduino Leonardo is used.
-  #endif 
 
   Serial.print("{");
   readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
@@ -152,7 +99,72 @@ void loop() {
     Serial.print("0");
   }
   Serial.print(second, DEC);
-  Serial.print(", ");
+  Serial.print("\", ");
+}
+
+//const int chipSelect = 4;
+
+void setup() {
+  Wire.begin();
+  // Open serial communications and wait for port to open:
+  Serial.begin(9600);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+  pinMode(2, INPUT_PULLUP);
+  pinMode(3, INPUT_PULLUP);
+  pinMode(4, INPUT_PULLUP);
+  pinMode(5, INPUT_PULLUP);
+  pinMode(6, INPUT_PULLUP);
+  pinMode(7, INPUT_PULLUP);
+  // Uncomment setDS3231time to set the RTC. Recomment to let clock run.
+  // DS3231 seconds, minutes, hours, day(1=Sunday, 7=Saturday), date, month, year
+  //setDS3231time(30,13,22,3,23,8,16);
+
+  // output version info so can see in the field
+  // Used info on http://forum.arduino.cc/index.php?topic=158014.0
+  jsonTimestamp();
+  Serial.print("\"Compiled:\": \""__DATE__ ", " __TIME__ ", " __VERSION__"\"");
+  Serial.println("}");
+
+  // The SD card code below was not robust for so I used a serial logger instead (OpenLog)
+  // You may have beter luck...
+  //Serial.print("Initializing SD card...");
+
+  //pinMode(10, OUTPUT); // change this to 53 on a mega  // don't follow this!!
+  //digitalWrite(10, HIGH); // Add this line
+
+  // see if the card is present and can be initialized:
+  //if (!SD.begin(chipSelect)) {
+  //  Serial.println("Card failed, or not present");
+    // don't do anything more:
+  //  return;
+  //}
+  //Serial.println("card initialized.");
+}
+
+void loop() {
+  // make a string for assembling the data to log:
+  //String dataString = "";
+  int analogPins = 4;
+  int digitalPins = 14;
+
+  // from http://forum.arduino.cc/index.php?topic=113656.0
+  #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
+    // Code in here will only be compiled if an Arduino Uno (or older) is used.
+  #endif
+  
+  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+    // Code in here will only be compiled if an Arduino Mega is used.
+    analogPins = 16;
+    digitalPins = 54;
+  #endif
+
+  #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__)
+    // Code in here will only be compiled if an Arduino Leonardo is used.
+  #endif 
+
+  jsonTimestamp();
 
   for (int pin = 0; pin < analogPins; pin++) {
     Serial.print("\"A");
