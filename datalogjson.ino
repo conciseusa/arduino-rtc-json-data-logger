@@ -59,6 +59,9 @@ void timeStamp(byte output) {
       Serial.print("T");
     }
     if ((output & B00000100) == B00000100) {
+      if (now.hour()<10) {
+        Serial.print("0");
+      }
       Serial.print(now.hour(), DEC);
       Serial.print(":");
       if (now.minute()<10) {
@@ -83,6 +86,9 @@ void timeStamp(byte output) {
       lcd.print("T");
     }
     if ((output & B00000100) == B00000100) {
+      if (now.hour()<10) {
+        lcd.print("0");
+      }
       lcd.print(now.hour(), DEC);
       lcd.print(":");
       if (now.minute()<10) {
@@ -162,10 +168,14 @@ void setup() {
 } // end setup()
 
 void loop() {
+  DateTime now = rtc.now();
   jsonTimestamp();
 
   // display prev data and time
   lcd.setCursor(0, 1);
+  if (thour<10) {
+    lcd.print("0");
+  }
   lcd.print(thour, DEC);
   lcd.print(":");
   if (tmin<10) {
@@ -178,13 +188,11 @@ void loop() {
   }
   lcd.print(tsec, DEC);
   lcd.print(" Temp ");
-  lcd.print(temp);
+  lcd.print(temp, 1);
 
-  DateTime now = rtc.now();
-  thour = now.hour(); // save temp time
+  thour = now.hour(); // save data time
   tmin = now.minute();
   tsec = now.second();
-  tday = now.day();
 
   for (int pin = 0; pin < analogPins; pin++) {
     Serial.print("\"A"); // A = analog
@@ -205,6 +213,11 @@ void loop() {
     }
   }
 
+  if (1) {
+    Serial.print(", \"RTCTEMP\": ");
+    Serial.print(rtc.getTemperature());
+  }
+
   Serial.print(", ");
   // D0, D1 srial port so start at 2
   for (int pin = 2; pin < digitalPins; pin++) {
@@ -219,10 +232,19 @@ void loop() {
   
   Serial.println("}");
 
+  // if new day reset high and low trackers, do after data set
+  if (tday != now.day()) {
+    yhtemp = thtemp;
+    yltemp = tltemp;
+    thtemp = temp;
+    tltemp = temp;
+    tday = now.day();
+  }
+
   lcd.setCursor(0, 0); // Set the cursor on the first column and first row. X, Y
   timeStamp(6);
   lcd.print(" Temp ");
-  lcd.print(temp);
+  lcd.print(temp, 1);
 
   // check if we have new high or lows
   if (temp > thtemp) {
@@ -239,17 +261,22 @@ void loop() {
     lcd.print("0");
   }
   lcd.print(now.month(), DEC);
+  lcd.print("-");
+  if (now.day()<10) {
+    lcd.print("0");
+  }
+  lcd.print(now.day(), DEC);
   lcd.print(" H");
-  lcd.print(thtemp);
+  if (thtemp>99) {
+    lcd.print(thtemp, 0);
+  } else {
+    lcd.print(thtemp, 1);
+  }
   lcd.print(" L");
-  lcd.print(tltemp);
-
-  // if new day reset high and low trackers
-  if (tday != now.day()) {
-    yhtemp = thtemp;
-    yltemp = tltemp;
-    thtemp = temp;
-    tltemp = temp;
+  if (tltemp>99) {
+    lcd.print(tltemp, 0);
+  } else {
+    lcd.print(tltemp, 1);
   }
 
   lcd.setCursor(0, 3);
@@ -257,9 +284,9 @@ void loop() {
     lcd.print("Yesterday: No Data");
   } else {
     lcd.print("Yeday H");
-    lcd.print(yhtemp);
+    lcd.print(yhtemp, 1);
     lcd.print(" L");
-    lcd.print(yltemp);
+    lcd.print(yltemp, 1);
   }
 
   // Control sample speed with D2, D3
