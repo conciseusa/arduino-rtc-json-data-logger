@@ -1,153 +1,112 @@
 
-// Script to read A & D pins, timestamp the date, and send out the serial port
+// Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
+// A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
+// A LCD shows the last 2 readings and the high and low for today and yesterday
 // It is a mix of code I wrote and example code I found
-// Mashup by Walter Spurgiasz 2016
+// Mashup by Walter Spurgiasz 2020
+// Code inspired from:
+// https://lastminuteengineers.com/ds3231-rtc-arduino-tutorial/
+// https://www.makerguides.com/character-i2c-lcd-arduino-tutorial/
 
-
-/*
- The SD card code below was not robust for me so I used a serial logger instead (OpenLog)
- You may have beter luck...
-
- SD card datalogger
- This example shows how to log data from three analog sensors
- to an SD card using the SD library.
-
- The circuit:
- * analog sensors on analog ins 0, 1, and 2
- * SD card attached to SPI bus as follows:
- ** MOSI - pin 11
- ** MISO - pin 12
- ** CLK - pin 13
- ** CS - pin 4
-
- created  24 Nov 2010
- modified 9 Apr 2012
- by Tom Igoe
- This example code is in the public domain.
- */
-
-#include <SPI.h>
-//#include <SD.h>
 #include "Wire.h"
-#define DS3231_I2C_ADDRESS 0x68
+#include "RTClib.h"
+#include <LiquidCrystal_I2C.h> // https://www.arduinolibraries.info/libraries/liquid-crystal-i2-c - Frank de Brabander
 
-// RTC code inspired from:
-// http://tronixstuff.com/2014/12/01/tutorial-using-ds1307-and-ds3231-real-time-clock-modules-with-arduino/
+RTC_DS3231 rtc; // DS3231_I2C_ADDRESS 0x68
+// Connect to LCD via I2C, default address 0x27 (A0-A2 not jumpered)
+LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 20, 4); // Change to (0x27,16,2) for 16x2 LCD.
+int analogPins = 4; // pins on an Uno
+int digitalPins = 14; // pins on an Uno
+float temp;
+char thour = 99; // save temp time
+char tmin = 99;
+char tsec = 99;
+char tday = 99; // save day so know when to reset high and low
+float thtemp = -999; // set so any normal reading above
+float tltemp = 999; // set so any normal reading below
+float yhtemp = -999;
+float yltemp = 999;
+
+//char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+
 // Convert normal decimal numbers to binary coded decimal
-byte decToBcd(byte val)
-{
-  return( (val/10*16) + (val%10) );
-}
+//byte decToBcd(byte val)
+//{
+//  return( (val/10*16) + (val%10) );
+//}
 // Convert binary coded decimal to normal decimal numbers
-byte bcdToDec(byte val)
-{
-  return( (val/16*10) + (val%16) );
-}
-void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte dayOfMonth, byte month, byte year)
-{
-  // sets time and date data to DS3231
-  Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0); // set next input to start at the seconds register
-  Wire.write(decToBcd(second)); // set seconds
-  Wire.write(decToBcd(minute)); // set minutes
-  Wire.write(decToBcd(hour)); // set hours
-  Wire.write(decToBcd(dayOfWeek)); // set day of week (1=Sunday, 7=Saturday)
-  Wire.write(decToBcd(dayOfMonth)); // set date (1 to 31)
-  Wire.write(decToBcd(month)); // set month
-  Wire.write(decToBcd(year)); // set year (0 to 99)
-  Wire.endTransmission();
-}
-void readDS3231time(byte *second, byte *minute, byte *hour, byte *dayOfWeek, byte *dayOfMonth, byte *month, byte *year)
-{
-  Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0); // set DS3231 register pointer to 00h
-  Wire.endTransmission();
-  Wire.requestFrom(DS3231_I2C_ADDRESS, 7);
-  // request seven bytes of data from DS3231 starting from register 00h
-  *second = bcdToDec(Wire.read() & 0x7f);
-  *minute = bcdToDec(Wire.read());
-  *hour = bcdToDec(Wire.read() & 0x3f);
-  *dayOfWeek = bcdToDec(Wire.read());
-  *dayOfMonth = bcdToDec(Wire.read());
-  *month = bcdToDec(Wire.read());
-  *year = bcdToDec(Wire.read());
+//byte bcdToDec(byte val)
+//{
+//  return( (val/16*10) + (val%16) );
+//}
+
+void timeStamp(byte output) {
+  DateTime now = rtc.now();
+
+  // timeStamp uses 2 ways to output data in the first 2 bits: Serial = 01 and LCD = 10
+  // to save memory, directly output to the disired output
+  // the next 2 bits have the format: whole timeStamp = 11, date only 10, time only 01
+
+  if ((output & B00000011) == B0000001) {
+    if ((output & B00001000) == B00001000) {
+      Serial.print(now.year(), DEC);
+      Serial.print("-");
+      Serial.print(now.month(), DEC);
+      Serial.print("-");
+      Serial.print(now.day(), DEC);
+    }
+    if ((output & B00001100) == B00001100) {
+      Serial.print("T");
+    }
+    if ((output & B00000100) == B00000100) {
+      Serial.print(now.hour(), DEC);
+      Serial.print(":");
+      if (now.minute()<10) {
+        Serial.print("0");
+      }
+      Serial.print(now.minute(), DEC);
+      Serial.print(":");
+      if (now.second()<10) {
+        Serial.print("0");
+      }
+      Serial.print(now.second(), DEC);
+    }
+  } else {
+    if ((output & B00001000) == B00001000) {
+      lcd.print(now.year(), DEC);
+      lcd.print("-");
+      lcd.print(now.month(), DEC);
+      lcd.print("-");
+      lcd.print(now.day(), DEC);
+    }
+    if ((output & B00001100) == B00001100) {
+      lcd.print("T");
+    }
+    if ((output & B00000100) == B00000100) {
+      lcd.print(now.hour(), DEC);
+      lcd.print(":");
+      if (now.minute()<10) {
+        lcd.print("0");
+      }
+      lcd.print(now.minute(), DEC);
+      lcd.print(":");
+      if (now.second()<10) {
+        lcd.print("0");
+      }
+      lcd.print(now.second(), DEC);
+    }
+  }
 }
 
 void jsonTimestamp()
 {
-  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-
-  Serial.print("{");
-  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
-  Serial.print("\"Time\": \"20");
-  Serial.print(year, DEC);
-  Serial.print("-");
-  Serial.print(month, DEC);
-  Serial.print("-");
-  Serial.print(dayOfMonth, DEC);
-  Serial.print("T");
-  Serial.print(hour, DEC);
-  Serial.print(":");
-  if (minute<10)
-  {
-    Serial.print("0");
-  }
-  Serial.print(minute, DEC);
-  Serial.print(":");
-  if (second<10)
-  {
-    Serial.print("0");
-  }
-  Serial.print(second, DEC);
+  Serial.print("{\"Time\": \""); // "Time": "2020-5-14T15:00:06"
+  timeStamp(13);
   Serial.print("\", ");
 }
 
-//const int chipSelect = 4;
-
 void setup() {
-  Wire.begin();
-  // Open serial communications and wait for port to open:
-  Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
-  pinMode(2, INPUT_PULLUP);
-  pinMode(3, INPUT_PULLUP);
-  pinMode(4, INPUT_PULLUP);
-  pinMode(5, INPUT_PULLUP);
-  pinMode(6, INPUT_PULLUP);
-  pinMode(7, INPUT_PULLUP);
-  // Uncomment setDS3231time to set the RTC. Recomment to let clock run.
-  // DS3231 seconds, minutes, hours, day(1=Sunday, 7=Saturday), date, month, year
-  //setDS3231time(30,13,22,3,23,8,16);
-
-  // output version info so can see in the field
-  // Used info on http://forum.arduino.cc/index.php?topic=158014.0
-  jsonTimestamp();
-  Serial.print("\"Compiled:\": \""__DATE__ ", " __TIME__ ", " __VERSION__"\"");
-  Serial.println("}");
-
-  // The SD card code below was not robust for so I used a serial logger instead (OpenLog)
-  // You may have beter luck...
-  //Serial.print("Initializing SD card...");
-
-  //pinMode(10, OUTPUT); // change this to 53 on a mega  // don't follow this!!
-  //digitalWrite(10, HIGH); // Add this line
-
-  // see if the card is present and can be initialized:
-  //if (!SD.begin(chipSelect)) {
-  //  Serial.println("Card failed, or not present");
-    // don't do anything more:
-  //  return;
-  //}
-  //Serial.println("card initialized.");
-}
-
-void loop() {
-  // make a string for assembling the data to log:
-  //String dataString = "";
-  int analogPins = 4;
-  int digitalPins = 14;
+  //Wire.begin(); // seems we do not need this
 
   // from http://forum.arduino.cc/index.php?topic=113656.0
   #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
@@ -164,27 +123,85 @@ void loop() {
     // Code in here will only be compiled if an Arduino Leonardo is used.
   #endif 
 
+  // Open serial communications and wait for port to open:
+  Serial.begin(9600);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+  Serial.println(""); // restart with a newline
+  if (! rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    while (1);
+  }
+
+  // line below can be used to set a time module
+  //rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // keep between rtc check and clock set check
+
+  if (rtc.lostPower()) {
+    Serial.println("{\"Error\": \"RTC lost power, time needs to be set,\"}");
+    while (1);
+  }
+
+  pinMode(2, INPUT_PULLUP);
+  pinMode(3, INPUT_PULLUP);
+  pinMode(4, INPUT_PULLUP);
+  pinMode(5, INPUT_PULLUP);
+  pinMode(6, INPUT_PULLUP);
+  pinMode(7, INPUT_PULLUP);
+
+  jsonTimestamp(); // start up message time
+  // output compile time / version info so can see in the field
+  // Used info on http://forum.arduino.cc/index.php?topic=158014.0
+  Serial.print("\"Compiled\": \""__DATE__ ", " __TIME__ ", " __VERSION__"\"");
+  Serial.println("}");
+
+  lcd.init();
+  lcd.backlight(); // lcd.noBacklight();
+
+} // end setup()
+
+void loop() {
   jsonTimestamp();
 
+  // display prev data and time
+  lcd.setCursor(0, 1);
+  lcd.print(thour, DEC);
+  lcd.print(":");
+  if (tmin<10) {
+    lcd.print("0");
+  }
+  lcd.print(tmin, DEC);
+  lcd.print(":");
+  if (tsec<10) {
+    lcd.print("0");
+  }
+  lcd.print(tsec, DEC);
+  lcd.print(" Temp ");
+  lcd.print(temp);
+
+  DateTime now = rtc.now();
+  thour = now.hour(); // save temp time
+  tmin = now.minute();
+  tsec = now.second();
+  tday = now.day();
+
   for (int pin = 0; pin < analogPins; pin++) {
-    Serial.print("\"A");
+    Serial.print("\"A"); // A = analog
     Serial.print(pin);
     Serial.print("\": ");
     if (pin == 0) { // for TMP36
       // converting that reading to voltage, for 3.3v arduino use 3.3
-      float temp = analogRead(pin) * 5.0;
+      temp = analogRead(pin) * 5.0;
       temp /= 1024.0;
       temp = (temp - 0.5) * 100; // converting to C, 10 mv per degree C wit 500 mV offset
       temp = (temp * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
       Serial.print(temp);
     } else {
       Serial.print(analogRead(pin));
-      //int sensor = analogRead(pin);
-      //dataString += String(sensor);
     }
     if (pin < analogPins - 1) {
       Serial.print(", ");
-      //dataString += ",";
     }
   }
 
@@ -201,22 +218,49 @@ void loop() {
   }
   
   Serial.println("}");
-  // print to the serial port too:
-  //Serial.println(dataString);
 
-  // open the file. note that only one file can be open at a time,
-  // so you have to close this one before opening another.
-  //File dataFile = SD.open("datalog1.txt", FILE_WRITE);
+  lcd.setCursor(0, 0); // Set the cursor on the first column and first row. X, Y
+  timeStamp(6);
+  lcd.print(" Temp ");
+  lcd.print(temp);
 
-  // if the file is available, write to it:
-  //if (dataFile) {
-  //  dataFile.println(dataString);
-  //  dataFile.close();
-  //}
-  // if the file isn't open, pop up an error:
-  //else {
-  //  Serial.println("error opening datalog.txt");
-  //}
+  // check if we have new high or lows
+  if (temp > thtemp) {
+    thtemp = temp;
+  }
+  if (temp < tltemp) {
+    tltemp = temp;
+  }
+
+  lcd.setCursor(0, 2);
+  lcd.print(now.year() - 2000, DEC);
+  lcd.print("-");
+  if (now.month()<10) {
+    lcd.print("0");
+  }
+  lcd.print(now.month(), DEC);
+  lcd.print(" H");
+  lcd.print(thtemp);
+  lcd.print(" L");
+  lcd.print(tltemp);
+
+  // if new day reset high and low trackers
+  if (tday != now.day()) {
+    yhtemp = thtemp;
+    yltemp = tltemp;
+    thtemp = temp;
+    tltemp = temp;
+  }
+
+  lcd.setCursor(0, 3);
+  if (yhtemp == -999 && yltemp == 999) {
+    lcd.print("Yesterday: No Data");
+  } else {
+    lcd.print("Yeday H");
+    lcd.print(yhtemp);
+    lcd.print(" L");
+    lcd.print(yltemp);
+  }
 
   // Control sample speed with D2, D3
   if ((digitalRead(3) == 1) &&  (digitalRead(2) == 1)) {
