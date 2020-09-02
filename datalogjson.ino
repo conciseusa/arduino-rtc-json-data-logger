@@ -9,14 +9,31 @@
 // https://www.makerguides.com/character-i2c-lcd-arduino-tutorial/
 
 #include "Wire.h"
+#define Wire Wire1
 #include "RTClib.h"
 #include <LiquidCrystal_I2C.h> // https://www.arduinolibraries.info/libraries/liquid-crystal-i2-c - Frank de Brabander
+// https://github.com/duinoWitchery/hd44780 - worked on Due
 
 RTC_DS3231 rtc; // DS3231_I2C_ADDRESS 0x68
+
+#define LCD_WIDTH 20
 // Connect to LCD via I2C, default address 0x27 (A0-A2 not jumpered)
-LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 20, 4); // Change to (0x27,16,2) for 16x2 LCD.
+LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, LCD_WIDTH, 4); // Change to (0x27,16,2) for 16x2 LCD.
+#if defined(LCD_WIDTH) && LCD_WIDTH == 20
+  void clearLCDline(byte line) {
+    lcd.setCursor(0, line);
+    lcd.print("                    ");
+  }
+#else
+  void clearLCDline(byte line) {
+    lcd.setCursor(0, line);
+    lcd.print("                ");
+  }
+#endif
+
 int analogPins = 4; // pins on an Uno
 int digitalPins = 14; // pins on an Uno
+float ioref = 5.0; // operating voltage on an Uno
 float temp;
 char thour = 99; // save temp time
 char tmin = 99;
@@ -127,7 +144,14 @@ void setup() {
 
   #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__)
     // Code in here will only be compiled if an Arduino Leonardo is used.
-  #endif 
+  #endif
+
+  #if defined(__SAM3X8E__)
+    // Code in here will only be compiled if an Arduino Due is used.
+    analogPins = 16;
+    digitalPins = 54;
+    ioref = 3.3;
+  #endif
 
   // Open serial communications and wait for port to open:
   Serial.begin(9600);
@@ -136,16 +160,16 @@ void setup() {
   }
 
   Serial.println(""); // restart with a newline
-  if (! rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-    while (1);
+  while (! rtc.begin()) {
+    Serial.println("{\"Error\": \"Could not find RTC\"}");
+    delay(1000); // 1 sec
   }
 
   // line below can be used to set a time module
   //rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // keep between rtc check and clock set check
 
   if (rtc.lostPower()) {
-    Serial.println("{\"Error\": \"RTC lost power, time needs to be set,\"}");
+    Serial.println("{\"Error\": \"RTC lost power, Time needs to be set,\"}");
     while (1);
   }
 
@@ -159,7 +183,7 @@ void setup() {
   jsonTimestamp(); // start up message time
   // output compile time / version info so can see in the field
   // Used info on http://forum.arduino.cc/index.php?topic=158014.0
-  Serial.print("\"Compiled\": \""__DATE__ ", " __TIME__ ", " __VERSION__"\"");
+  Serial.print("{\"Compiled\": \"" __DATE__ ", " __TIME__ ", " __VERSION__ "\"}");
   Serial.println("}");
 
   lcd.init();
@@ -168,6 +192,12 @@ void setup() {
 } // end setup()
 
 void loop() {
+  //Serial.print(" * ");
+  //lcd.setCursor(0, 1);
+  //lcd.print("Test");
+  //delay(1000); // 1 sec
+  //return;
+
   DateTime now = rtc.now();
   jsonTimestamp();
 
@@ -200,7 +230,9 @@ void loop() {
     Serial.print("\": ");
     if (pin == 0) { // for TMP36
       // converting that reading to voltage, for 3.3v arduino use 3.3
-      temp = analogRead(pin) * 5.0;
+      temp = analogRead(pin); // dummy read to switch channel
+      delayMicroseconds(100); // wait for s/h
+      temp = analogRead(pin) * ioref;
       temp /= 1024.0;
       temp = (temp - 0.5) * 100; // converting to C, 10 mv per degree C wit 500 mV offset
       temp = (temp * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
@@ -219,7 +251,7 @@ void loop() {
   }
 
   Serial.print(", ");
-  // D0, D1 srial port so start at 2
+  // D0, D1 serial port so start at 2
   for (int pin = 2; pin < digitalPins; pin++) {
     Serial.print("\"D");
     Serial.print(pin);
@@ -239,12 +271,16 @@ void loop() {
     thtemp = temp;
     tltemp = temp;
     tday = now.day();
+    clearLCDline(0); // clear screen once a day
+    clearLCDline(1);
+    clearLCDline(2);
+    clearLCDline(3);
   }
 
   lcd.setCursor(0, 0); // Set the cursor on the first column and first row. X, Y
   timeStamp(6);
   lcd.print(" Temp ");
-  lcd.print(temp, 1);
+  lcd.print(temp, 1); // print temp with one decimal point of precision
 
   // check if we have new high or lows
   if (temp > thtemp) {
@@ -287,6 +323,16 @@ void loop() {
     lcd.print(yhtemp, 1);
     lcd.print(" L");
     lcd.print(yltemp, 1);
+  }
+
+  if (Serial.available() > 0) {
+    // for testing serial rx, or as an example of how to rx and display serial data
+    lcd.setCursor(19, 3); // bottom right coner
+    char rec_char;
+    rec_char = Serial.read();
+    if (rec_char != 10) {
+      lcd.print((char) rec_char);
+    }
   }
 
   // Control sample speed with D2, D3
