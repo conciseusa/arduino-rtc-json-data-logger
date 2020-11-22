@@ -13,6 +13,15 @@
 // Code inspired from:
 // https://lastminuteengineers.com/ds3231-rtc-arduino-tutorial/
 // https://www.makerguides.com/character-i2c-lcd-arduino-tutorial/
+// Tested on Uno, Mega2560, Due, Adafruit Metro M4 Express AirLift (WiFi) - Lite, chipKIT uC32
+// Adafruit Metro M4 Express AirLift (WiFi) - Lite
+// https://learn.adafruit.com/adafruit-metro-m4-express-featuring-atsamd51/setup
+// File->Preferences->Additional Boards Manager URLS (comma seperated) https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+// Tools->Board->Board Manager  Scroll down to the Adafruit and install
+// chipKIT uC32 https://blog.digilentinc.com/how-to-program-your-chipkit-board-in-the-arduino-ide/
+// File->Preferences->Additional Boards Manager URLS (comma seperated) https://github.com/chipKIT32/chipKIT-core/raw/master/package_chipkit_index.json
+// Tools->Board->Board Manager  Scroll down to the chipKIT and install
+// On 64b Ubuntu - sudo apt-get install libc6-i386 - More details at http://chipkit.net/wiki/index.php?title=ChipKIT_core -> 64-Bit Linux
 
 float temp; // used for scaling TMP36 temperature sensor
 char thour = 99; // save temp time
@@ -25,6 +34,7 @@ float yhtemp = -999;
 float yltemp = 999;
 
 #include "Wire.h"
+#define SERIALP Serial // different Arduino have variuos serial ports, so control which one we use
 
 // from http://forum.arduino.cc/index.php?topic=113656.0
 #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
@@ -51,6 +61,26 @@ float yltemp = 999;
   #define digitalPins 54
   #define ioref 3.3f
   #define Wire Wire1 // this is needed on Due
+#endif
+
+#if defined(_VARIANT_METRO_M4_WIFI_)
+  #define analogPins NUM_ANALOG_INPUTS
+  #define digitalPins NUM_DIGITAL_PINS
+  #define ioref 3.3f
+  #define USE_SERIAL1 1
+  #undef SERIALP
+  #define SERIALP Serial1
+  #define USE_PIO_SERCOM 1
+  //#include <Arduino.h>        // required before wiring_private.h - worked with out, some say it is required here?
+  #include "wiring_private.h" // pinPeripheral() function - needed for Serial1
+#endif
+
+#if defined(_BOARD_NAME_) && defined(_DTWI0_BASE)
+  // _BOARD_NAME_ "chipKIT uC32" they do not have a seperate define for each board so this may collide with other chipKIT boards
+  // other option is to read _BOARD_NAME_ at run time and set the needed values
+  #define analogPins NUM_ANALOG_PINS
+  #define digitalPins NUM_DIGITAL_PINS
+  #define ioref 3.3f
 #endif
 
 #include "RTClib.h"
@@ -103,30 +133,30 @@ void timeStamp(byte output) {
 
   if ((output & B00000011) == B0000001) {
     if ((output & B00001000) == B00001000) {
-      Serial.print(now.year(), DEC);
-      Serial.print("-");
-      Serial.print(now.month(), DEC);
-      Serial.print("-");
-      Serial.print(now.day(), DEC);
+      SERIALP.print(now.year(), DEC);
+      SERIALP.print("-");
+      SERIALP.print(now.month(), DEC);
+      SERIALP.print("-");
+      SERIALP.print(now.day(), DEC);
     }
     if ((output & B00001100) == B00001100) {
-      Serial.print("T");
+      SERIALP.print("T");
     }
     if ((output & B00000100) == B00000100) {
       if (now.hour()<10) {
-        Serial.print("0");
+        SERIALP.print("0");
       }
-      Serial.print(now.hour(), DEC);
-      Serial.print(":");
+      SERIALP.print(now.hour(), DEC);
+      SERIALP.print(":");
       if (now.minute()<10) {
-        Serial.print("0");
+        SERIALP.print("0");
       }
-      Serial.print(now.minute(), DEC);
-      Serial.print(":");
+      SERIALP.print(now.minute(), DEC);
+      SERIALP.print(":");
       if (now.second()<10) {
-        Serial.print("0");
+        SERIALP.print("0");
       }
-      Serial.print(now.second(), DEC);
+      SERIALP.print(now.second(), DEC);
     }
   } else {
     if ((output & B00001000) == B00001000) {
@@ -160,9 +190,9 @@ void timeStamp(byte output) {
 
 void jsonTimestamp() {
   // starts off the json line with a timestamp
-  Serial.print("{\"Time\": \""); // {"Time": "2020-5-14T15:00:06"
+  SERIALP.print("{\"Time\": \""); // {"Time": "2020-5-14T15:00:06"
   timeStamp(13);
-  Serial.print("\", ");
+  SERIALP.print("\", ");
 }
 
 void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
@@ -173,9 +203,9 @@ void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
   Wire.write(0x80); // dummy write to set register pointer to 80h start of 128-bit (16 bytes) serial #
   if(count = Wire.endTransmission()) { // reuse count to save ram, 0 = success
     if (output == 1) {
-      Serial.print("\"SerialNumber\": \"Error: "); // "SerialNumber": "FFFFFFFFFFFFFFFF"
-      Serial.print(count); // https://www.arduino.cc/en/Reference/WireEndTransmission for error codes
-      Serial.print("\", ");
+      SERIALP.print("\"SerialNumber\": \"Error: "); // "SerialNumber": "FFFFFFFFFFFFFFFF"
+      SERIALP.print(count); // https://www.arduino.cc/en/Reference/WireEndTransmission for error codes
+      SERIALP.print("\", ");
     } else {
       lcd.print("SerialNumberError: ");
       lcd.print(count); // https://www.arduino.cc/en/Reference/WireEndTransmission for error codes
@@ -186,17 +216,17 @@ void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
   Wire.beginTransmission(0x58);
   Wire.requestFrom(0x58, 16);
   if (output == 1) {
-    Serial.print("\"SerialNumber\": \""); // "SerialNumber": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+    SERIALP.print("\"SerialNumber\": \""); // "SerialNumber": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
   }
   while(Wire.available()) {    // slave may send less than requested
     unsigned char c = Wire.read();    // receive a byte as character
     count++;
     if (output == 1) {
-      Serial.print(c < 16 ? "0" : ""); // so fixed length output
-      Serial.print(c, HEX);
-      // Serial.print(' '); // used to debug issues with print(c, HEX) on differnt types of Arduino
-      // Serial.print(Wire.available());
-      // Serial.print(' ');
+      SERIALP.print(c < 16 ? "0" : ""); // so fixed length output
+      SERIALP.print(c, HEX);
+      // SERIALP.print(' '); // used to debug issues with print(c, HEX) on differnt types of Arduino
+      // SERIALP.print(Wire.available());
+      // SERIALP.print(' ');
     } else {
       lcd.print(c < 16 ? "0" : "");
       lcd.print(c, HEX);
@@ -209,24 +239,71 @@ void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
     }
   }
   if (output == 1) {
-    Serial.print("\", ");
+    SERIALP.print("\", ");
   }
 }
 
 void setup() {
   int status;
 
+  #if defined(USE_PIO_SERCOM)
+    // Assign pins 0 & 1 SERCOM functionality on Metro M4
+    pinPeripheral(0, PIO_SERCOM_ALT);
+    pinPeripheral(1, PIO_SERCOM_ALT);
+  #endif
+
   Wire.begin(); // seems we do not need this, things seem to work the same if called or not called
 
   // Open serial communications and wait for port to open:
+  #if defined(USE_SERIAL1)
+  Serial1.begin(9600);
+  while (!Serial1) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+  #else
   Serial.begin(9600);
   while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
   }
+  #endif
+
+
+  #if 1 // i2c_scanner can be handyfor troubleshooting - https://playground.arduino.cc/Main/I2cScanner/
+  byte error, address;
+  int nDevices;
+ 
+  SERIALP.println("Scanning...");
+ 
+  nDevices = 0;
+  for(address = 1; address < 127; address++ ) {
+    // i2c_scanner uses the return value of Write.endTransmisstion to see if a device acknowledged the address.
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission();
+ 
+    if (error == 0) {
+      SERIALP.print("I2C device found at address 0x");
+      if (address<16)
+        SERIALP.print("0");
+      SERIALP.print(address,HEX);
+      SERIALP.println("  !");
+ 
+      nDevices++;
+    } else if (error==4) {
+      SERIALP.print("Unknown error at address 0x");
+      if (address<16)
+        SERIALP.print("0");
+      SERIALP.println(address,HEX);
+    }    
+  }
+  if (nDevices == 0) 
+    SERIALP.println("No I2C devices found\n");
+  else
+    SERIALP.println("Scan done\n");
+  #endif // i2c_scanner
 
   // for some reason if the rtc begin is done after the lcd init, the rtc begin fails
   while (! rtc.begin()) {
-    Serial.println("{\"Error\": \"Could not find RTC\"}");
+    SERIALP.println("{\"Error\": \"Could not find RTC\"}");
     delay(5000);
   }
 
@@ -234,23 +311,23 @@ void setup() {
   //rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // keep between rtc check and clock set check, uncomment, comple and run, immediately comment out, comple and run
 
   if (rtc.lostPower()) {
-    Serial.println("{\"Error\": \"RTC lost power, Time needs to be set,\"}");
+    SERIALP.println("{\"Error\": \"RTC lost power, Time needs to be set,\"}");
     while (1);
   }
 
-  Serial.println("");
+  SERIALP.println("");
   jsonTimestamp(); // start up message time
   outputSerialNumber(1); // you can remove this if not sending data to cloud service
   // output compile time / version info so can see in the field
   // Used info on http://forum.arduino.cc/index.php?topic=158014.0
-  Serial.print("\"Compiled\": \"" __DATE__ ", " __TIME__ ", " __VERSION__ "\"");
-  Serial.println("}");
+  SERIALP.print("\"Compiled\": \"" __DATE__ ", " __TIME__ ", " __VERSION__ "\"");
+  SERIALP.println("}");
 
   // lcd.init(); // LiquidCrystal_I2C
   // lcd.backlight(); // lcd.noBacklight();
   status = lcd.begin(LCD_COLS, LCD_ROWS); // cols, rows
   if(status) { // non zero status means it was unsuccesful
-    Serial.println("{\"Error\": \"LCD  begin command failed,\"}");
+    SERIALP.println("{\"Error\": \"LCD  begin command failed,\"}");
     // hd44780 has a fatalError() routine that blinks an led if possible
     // begin() failed so blink error code using the onboard LED if possible
     // hd44780::fatalError(status); // does not return, uncomment if needed to troubleshoot LCD
@@ -261,10 +338,11 @@ void setup() {
   // The code below attempts put OpenLog in command mode, send a init command, display the return text on the lcd, and reset back to recording mode
   // The code works putting OpenLog in command mode and sending a command, but quickly runs into issues due to the lcd overflowing.
   // This code can be a start for reading from OpenLog, but needs more work.
-  // The code is here to test that the RX hardware is working (read from OpenLog, OpenLog is not jamming the serial port during programming) 
+  // The code is here to test that the RX hardware is working (read from OpenLog, OpenLog is not jamming the serial port during programming)
+  // On an Uno the Arduino IDE Serial Monitor shows the commands sent to the OpenLog, the lcd shows the output of the OpenLog. Other Arduinos may behave differently.
   lcd.print("OpenLog: ");
-  Serial.println(""); // move to a clean line
-  Serial.print("\x1a\x1a\x1a");
+  SERIALP.println(""); // move to a clean line
+  SERIALP.print("\x1a\x1a\x1a");
   // Wait for OpenLog to return waiting for a command
   status = 100; // reuse status to save ram
   while(status > 0) {
@@ -278,7 +356,7 @@ void setup() {
     lcd.print("Missing/No response");
   } else {
     int line = 0;
-    Serial.println("init"); // regular println works with OpenLog v2.51 and above
+    SERIALP.println("init"); // regular println works with OpenLog v2.51 and above, can also try an ls command
     //delay(100);
     for (status = 0; status < 1000; status++) { // reuse status to save ram
       if (Serial.available() > 0) {
@@ -301,7 +379,7 @@ void setup() {
           lcd.setCursor(0, line);
           delay(50);
         }
-        // Serial.print(rec_char); useful for troubleshooting, but will echo the text back to OpenLog causing unknown command errors
+        // SERIALP.print(rec_char); useful for troubleshooting, but will echo the text back to OpenLog causing unknown command errors
       } else {
         delay(10);
         if (Serial.available() == 0) {
@@ -309,30 +387,37 @@ void setup() {
         }
       }
     }
-    Serial.println(""); // make sure reset has clean line
+    SERIALP.println(""); // make sure reset has clean line
     delay(5000); // let data hang on the lcd
-    Serial.println("reset"); // reset OpenLog to record data
+    SERIALP.println("reset"); // reset OpenLog to record data
   }
   delay(1000);
-  Serial.println(""); // restart with a newline
+  SERIALP.println(""); // restart with a newline
   while(Serial.available()) {Serial.read();} // clear the serial buffer
   #endif // OpenLog RX
 
   //ExternalEEPROM eeMem;
   //if (eeMem.begin(0b1010000) == false) { // , Wire1 0b1011(A2 A1 A0): a AT24CS08 I2C EEPROM w/ 128-bit (16 bytes) serial #
-  //  Serial.println("No memory detected. Freezing.");
+  //  SERIALP.println("No memory detected. Freezing.");
   //  while (1)
   //    ;
   //}
-  //Serial.println("Memory detected!");
-  //Serial.print("Mem size in bytes: ");
-  //Serial.println(eeMem.length());
+  //SERIALP.println("Memory detected!");
+  //SERIALP.print("Mem size in bytes: ");
+  //SERIALP.println(eeMem.length());
   //byte byteValue = 200;
   //const uint8_t myChars[2] = "L";
   //eeMem.write(128, myChars, 1); // (location, data) dummy write
   //byteValue = eeMem.read(128);
-  //Serial.print("I read: ");
-  //Serial.println(byteValue);
+  //SERIALP.print("I read: ");
+  //SERIALP.println(byteValue);
+
+  clearLCDline(0);
+  clearLCDline(1);
+#if defined(LCD_ROWS) && LCD_ROWS == 4
+  clearLCDline(2);
+  clearLCDline(3);
+#endif
 
   lcd.print("Serial #: ");
   lcd.setCursor(0, 1);
@@ -340,6 +425,8 @@ void setup() {
 
   delay(5000);
 
+  //pinMode(0, INPUT_PULLUP); // warning - may disturb serial port
+  //pinMode(1, INPUT_PULLUP); // warning - may disturb serial port
   pinMode(2, INPUT_PULLUP);
   pinMode(3, INPUT_PULLUP);
   pinMode(4, INPUT_PULLUP);
@@ -350,12 +437,11 @@ void setup() {
 } // end setup()
 
 void loop() {
-  //Serial.print(" * ");
+  //SERIALP.print(" * ");
   //lcd.setCursor(0, 1);
   //lcd.print("Test");
-
-  //delay(1000); // 1 sec
-  //return;
+  //SERIALP.println("");
+  //return; // the above block tests writing to serial port and lcd with out involving other functions
 
   DateTime now = rtc.now();
   jsonTimestamp();
@@ -385,9 +471,9 @@ void loop() {
   tsec = now.second();
 
   for (int pin = 0; pin < analogPins; pin++) {
-    Serial.print("\"A"); // A = analog
-    Serial.print(pin);
-    Serial.print("\": ");
+    SERIALP.print("\"A"); // A = analog
+    SERIALP.print(pin);
+    SERIALP.print("\": ");
     if (pin == 0) { // for TMP36
       // converting that reading to voltage, for 3.3v arduino use 3.3
       temp = analogRead(pin); // dummy read to switch channel
@@ -396,33 +482,33 @@ void loop() {
       temp /= 1024.0;
       temp = (temp - 0.5) * 100; // converting to C, 10 mv per degree C wit 500 mV offset
       temp = (temp * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
-      Serial.print(temp);
+      SERIALP.print(temp);
     } else {
-      Serial.print(analogRead(pin));
+      SERIALP.print(analogRead(pin));
     }
     if (pin < analogPins - 1) {
-      Serial.print(", ");
+      SERIALP.print(", ");
     }
   }
 
   if (1) {
-    Serial.print(", \"RTCTEMP\": ");
-    Serial.print(rtc.getTemperature());
+    SERIALP.print(", \"RTCTEMP\": ");
+    SERIALP.print(rtc.getTemperature());
   }
 
-  Serial.print(", ");
+  SERIALP.print(", ");
   // D0, D1 serial port so start at 2
   for (int pin = 2; pin < digitalPins; pin++) {
-    Serial.print("\"D");
-    Serial.print(pin);
-    Serial.print("\": ");
-    Serial.print(digitalRead(pin));
+    SERIALP.print("\"D");
+    SERIALP.print(pin);
+    SERIALP.print("\": ");
+    SERIALP.print(digitalRead(pin));
     if (pin < digitalPins - 1) {
-      Serial.print(", ");
+      SERIALP.print(", ");
     }
   }
   
-  Serial.println("}");
+  SERIALP.println("}");
 
   // if new day reset high and low trackers, do after data set
   if (tday != now.day()) {
