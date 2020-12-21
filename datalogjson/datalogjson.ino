@@ -5,7 +5,8 @@
 // The RPi can be shut down and just the core data logging can run when power needs to be conserved.
 // A LCD shows the last 2 readings and the high and low for today and yesterday. A 20X4 LCD is needed to show that much data.
 // Pins used: D0, D1 for serial port, D2, D3 for sample speed, I2C port (depends on Arduino flavor)
-//            D7 push button as used in https://www.arduino.cc/en/tutorial/pushbutton, LED_BUILTIN
+//            D7 push button as used in https://www.arduino.cc/en/tutorial/pushbutton, used to cut short long sleep times
+//            LED_BUILTIN - on when processing data (not sleeping)
 // It is possible the code can be used unmodified in many applications.
 // But many applications will require some modification. Even so, having sample code to talk to all the components should speed things up.
 // It is a mix of code I wrote and example code I found
@@ -433,6 +434,12 @@ void setup() {
   pinMode(5, INPUT_PULLUP);
   pinMode(6, INPUT_PULLUP);
   pinMode(7, INPUT_PULLUP);
+  pinMode(8, INPUT_PULLUP);
+  pinMode(9, INPUT_PULLUP);
+  pinMode(10, INPUT_PULLUP);
+  pinMode(11, INPUT_PULLUP);
+  pinMode(12, INPUT_PULLUP);
+  pinMode(13, OUTPUT);  // LED
 
 } // end setup()
 
@@ -581,14 +588,26 @@ void loop() {
     }
   }
 
+  digitalWrite(LED_BUILTIN, LOW);
   // Control sample speed with D2, D3
   if ((digitalRead(3) == 1) &&  (digitalRead(2) == 1)) {
     delay(1000); // 1 sec
   } else if ((digitalRead(3) == 1) &&  (digitalRead(2) == 0)) {
     delay(10000); // 10 sec
   } else if ((digitalRead(3) == 0) &&  (digitalRead(2) == 1)) {
-    delay(60000); // 1 min
+    for (int count = 0; count < 60; count++) { // 1 min
+      delay(1000); // 1 sec
+      if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
+        break;
+      }
+    }
   } else if ((digitalRead(3) == 0) &&  (digitalRead(2) == 0)) {
-    delay(600000); // 10 min
+    for (int count = 0; count < 600; count++) { // 10 min
+      delay(1000); // 1 sec
+      if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
+        break;
+      }
+    }
   }
+  digitalWrite(LED_BUILTIN, HIGH); // turn the LED on while processing
 }
