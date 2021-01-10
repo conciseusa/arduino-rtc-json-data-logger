@@ -556,13 +556,13 @@ void loop() {
   }
   lcd.print(now.day(), DEC);
   lcd.print(" H");
-  if (thtemp>99) {
+  if (thtemp>99 || thtemp<0) {
     lcd.print(thtemp, 0);
   } else {
     lcd.print(thtemp, 1);
   }
   lcd.print(" L");
-  if (tltemp>99) {
+  if (tltemp>99 || tltemp<0) {
     lcd.print(tltemp, 0);
   } else {
     lcd.print(tltemp, 1);
