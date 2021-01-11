@@ -4,7 +4,7 @@
 // This approach was taken because the system will be used with batter/solar power.
 // The RPi can be shut down and just the core data logging can run when power needs to be conserved.
 // A LCD shows the last 2 readings and the high and low for today and yesterday. A 20X4 LCD is needed to show that much data.
-// Pins used: D0, D1 for serial port, D2, D3 for sample speed, I2C port (depends on Arduino flavor)
+// Pins used: D0, D1 for serial port, D5, D6 for sample speed, I2C port (depends on Arduino flavor)
 //            D7 push button as used in https://www.arduino.cc/en/tutorial/pushbutton, used to cut short long sleep times
 //            LED_BUILTIN - on when processing data (not sleeping)
 // It is possible the code can be used unmodified in many applications.
@@ -43,6 +43,17 @@ float yltemp = 999;
   #define analogPins 4
   #define digitalPins 14
   #define ioref 5.0f // operating voltage on an Uno, float becaused coud be 3.3 and used to scale A/D converter
+#endif
+
+#if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__)
+  // Code in here will only be compiled if an Arduino Leonardo is used.
+  #define analogPins 6  // A0-A5, A6-A11 (on digital pins 4, 6, 8, 9, 10, & 12, will need to convert those to analog to go above 6)
+  #define digitalPins 14  // On the Leonardo, I2C is on digital pins 2 and 3 so don't use those if you need I2C
+  #define ioref 5.0f // operating voltage on an Leonardo, float becaused coud be 3.3 and used to scale A/D converter
+  // Comment out the next 3 lines to output to the USB serial port (watch on Arduino Serial Monitor)
+  #define USE_SERIAL1 1
+  #undef SERIALP
+  #define SERIALP Serial1
 #endif
   
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
@@ -253,8 +264,6 @@ void setup() {
     pinPeripheral(1, PIO_SERCOM_ALT);
   #endif
 
-  Wire.begin(); // seems we do not need this, things seem to work the same if called or not called
-
   // Open serial communications and wait for port to open:
   #if defined(USE_SERIAL1)
   Serial1.begin(9600);
@@ -267,7 +276,9 @@ void setup() {
     ; // wait for serial port to connect. Needed for native USB port only
   }
   #endif
+  // SERIALP.print("Test Serial first."); // use to test serial port before anything else jams things up
 
+  Wire.begin(); // seems we do not need this, things seem to work the same if called or not called
 
   #if 1 // i2c_scanner can be handyfor troubleshooting - https://playground.arduino.cc/Main/I2cScanner/
   byte error, address;
@@ -589,19 +600,19 @@ void loop() {
   }
 
   digitalWrite(LED_BUILTIN, LOW);
-  // Control sample speed with D2, D3
-  if ((digitalRead(3) == 1) &&  (digitalRead(2) == 1)) {
+  // Control sample speed with D5, D6
+  if ((digitalRead(6) == 1) &&  (digitalRead(5) == 1)) {
     delay(1000); // 1 sec
-  } else if ((digitalRead(3) == 1) &&  (digitalRead(2) == 0)) {
+  } else if ((digitalRead(6) == 1) &&  (digitalRead(5) == 0)) {
     delay(10000); // 10 sec
-  } else if ((digitalRead(3) == 0) &&  (digitalRead(2) == 1)) {
+  } else if ((digitalRead(6) == 0) &&  (digitalRead(5) == 1)) {
     for (int count = 0; count < 60; count++) { // 1 min
       delay(1000); // 1 sec
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
         break;
       }
     }
-  } else if ((digitalRead(3) == 0) &&  (digitalRead(2) == 0)) {
+  } else if ((digitalRead(6) == 0) &&  (digitalRead(5) == 0)) {
     for (int count = 0; count < 600; count++) { // 10 min
       delay(1000); // 1 sec
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
