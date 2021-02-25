@@ -24,7 +24,7 @@
 // Tools->Board->Board Manager  Scroll down to the chipKIT and install
 // On 64b Ubuntu - sudo apt-get install libc6-i386 - More details at http://chipkit.net/wiki/index.php?title=ChipKIT_core -> 64-Bit Linux
 
-float temp; // used for scaling TMP36 temperature sensor
+float temp0; // used for scaling TMP36 temperature sensor on A0
 char thour = 99; // save temp time
 char tmin = 99;
 char tsec = 99;
@@ -33,6 +33,8 @@ float thtemp = -999; // set so any normal reading above
 float tltemp = 999; // set so any normal reading below
 float yhtemp = -999;
 float yltemp = 999;
+float volt3; // used for scaling voltage on A3
+int temp_int;
 
 #include "Wire.h"
 #define SERIALP Serial // different Arduino have variuos serial ports, so control which one we use
@@ -481,8 +483,10 @@ void loop() {
     lcd.print("0");
   }
   lcd.print(tsec, DEC);
-  lcd.print(" Temp ");
-  lcd.print(temp, 1);
+  lcd.print(" T");
+  lcd.print(temp0, 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
+  lcd.print(" V");
+  lcd.print(volt3, 1);
 
   thour = now.hour(); // save data time
   tmin = now.minute();
@@ -492,19 +496,37 @@ void loop() {
     SERIALP.print("\"A"); // A = analog
     SERIALP.print(pin);
     SERIALP.print("\": ");
-    if (pin == 0) { // for TMP36
-      // converting that reading to voltage, for 3.3v arduino use 3.3
-      temp = analogRead(pin); // dummy read to switch channel
+    // In general, it is preferred to do signal processing downstream where issues are easier to fix
+    // and the core data logging function is not impacted. But if an application does not use any
+    // downstream processes, below is an example of calculating the temp from a TMP36.
+    if (pin == 0) {
+      // converting reading from voltage to temp F, for 3.3v arduino ioref = 3.3
+      temp0 = analogRead(pin); // dummy read to switch channel
       delayMicroseconds(100); // wait for s/h
-      temp = analogRead(pin) * ioref;
-      temp /= 1024.0;
-      temp = (temp - 0.5) * 100; // converting to C, 10 mv per degree C wit 500 mV offset
-      temp = (temp * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
-      SERIALP.print(temp);
+      temp0 = analogRead(pin);
+      SERIALP.print(temp0); // output raw value
+      temp0 *= ioref;
+      SERIALP.print(", \"A");
+      SERIALP.print(pin);
+      SERIALP.print("tempF\": ");
+      temp0 /= 1024.0;
+      temp0 = (temp0 - 0.5) * 100; // converting to C, 10 mv per degree C wit 500 mV offset
+      // SERIALP.print(temp0); this line will output C
+      temp0 = (temp0 * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
+      SERIALP.print(temp0); // output tempF
+    } else if (pin == 3) { // 40V input 71.5K/10K on 5V ioref
+      temp_int = analogRead(pin);
+      SERIALP.print(temp_int); // output raw value
+      volt3 = temp_int<<2;
+      volt3 /= 100;
+      SERIALP.print(", \"A");
+      SERIALP.print(pin);
+      SERIALP.print("volt\": ");
+      SERIALP.print(volt3);
     } else {
       SERIALP.print(analogRead(pin));
     }
-    if (pin < analogPins - 1) {
+    if (pin < analogPins - 1) { // do not add , on last item
       SERIALP.print(", ");
     }
   }
@@ -532,8 +554,8 @@ void loop() {
   if (tday != now.day()) {
     yhtemp = thtemp;
     yltemp = tltemp;
-    thtemp = temp;
-    tltemp = temp;
+    thtemp = temp0;
+    tltemp = temp0;
     tday = now.day();
     clearLCDline(0); // clear screen once a day
     clearLCDline(1);
@@ -543,15 +565,17 @@ void loop() {
 
   lcd.setCursor(0, 0); // Set the cursor on the first column and first row. X, Y
   timeStamp(6);
-  lcd.print(" Temp ");
-  lcd.print(temp, 1); // print temp with one decimal point of precision
+  lcd.print(" T");
+  lcd.print(temp0, 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
+  lcd.print(" V");
+  lcd.print(volt3, 1);
 
   // check if we have new high or lows
-  if (temp > thtemp) {
-    thtemp = temp;
+  if (temp0 > thtemp) {
+    thtemp = temp0;
   }
-  if (temp < tltemp) {
-    tltemp = temp;
+  if (temp0 < tltemp) {
+    tltemp = temp0;
   }
 
   lcd.setCursor(0, 2);
@@ -600,21 +624,21 @@ void loop() {
   }
 
   digitalWrite(LED_BUILTIN, LOW);
-  // Control sample speed with D5, D6
-  if ((digitalRead(6) == 1) &&  (digitalRead(5) == 1)) {
+  // Control sample speed with D5, D6. Default to 10 min.
+  if ((digitalRead(6) == 0) &&  (digitalRead(5) == 0)) {
     delay(1000); // 1 sec
   } else if ((digitalRead(6) == 1) &&  (digitalRead(5) == 0)) {
     delay(10000); // 10 sec
   } else if ((digitalRead(6) == 0) &&  (digitalRead(5) == 1)) {
     for (int count = 0; count < 60; count++) { // 1 min
-      delay(1000); // 1 sec
+      delay(1000); // 1 sec button scan
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
         break;
       }
     }
-  } else if ((digitalRead(6) == 0) &&  (digitalRead(5) == 0)) {
+  } else if ((digitalRead(6) == 1) &&  (digitalRead(5) == 1)) {
     for (int count = 0; count < 600; count++) { // 10 min
-      delay(1000); // 1 sec
+      delay(1000); // 1 sec button scan
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
         break;
       }
