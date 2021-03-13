@@ -97,7 +97,7 @@ int temp_int;
   #define ioref 3.3f
 #endif
 
-#include "RTClib.h"
+#include "RTClib.h" // Adafruit  https://www.arduino.cc/reference/en/libraries/rtclib/
 #include <hd44780.h> // Extensible hd44780 in library manager - https://github.com/duinoWitchery/hd44780 - worked on Due
 #include <hd44780ioClass/hd44780_I2Cexp.h> // i2c expander i/o class header
 // #include "SparkFun_External_EEPROM.h" // https://github.com/sparkfun/SparkFun_External_EEPROM_Arduino_Library
