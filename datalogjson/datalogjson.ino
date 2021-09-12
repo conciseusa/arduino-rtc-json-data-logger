@@ -14,7 +14,7 @@
 // Code inspired from:
 // https://lastminuteengineers.com/ds3231-rtc-arduino-tutorial/
 // https://www.makerguides.com/character-i2c-lcd-arduino-tutorial/
-// Tested on Uno, Mega2560, Due, Adafruit Metro M4 Express AirLift (WiFi) - Lite, chipKIT uC32
+// Tested on Uno, Mega2560, Leonardo, Due, Adafruit Metro M4 Express AirLift (WiFi) - Lite, chipKIT uC32
 // Adafruit Metro M4 Express AirLift (WiFi) - Lite
 // https://learn.adafruit.com/adafruit-metro-m4-express-featuring-atsamd51/setup
 // File->Preferences->Additional Boards Manager URLS (comma seperated) https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
@@ -24,7 +24,7 @@
 // Tools->Board->Board Manager  Scroll down to the chipKIT and install
 // On 64b Ubuntu - sudo apt-get install libc6-i386 - More details at http://chipkit.net/wiki/index.php?title=ChipKIT_core -> 64-Bit Linux
 
-float temp0; // used for scaling TMP36 temperature sensor on A0
+float atemp[2]; // used for scaling TMP36 temperature sensor on A inputs
 char thour = 99; // save temp time
 char tmin = 99;
 char tsec = 99;
@@ -60,8 +60,8 @@ int temp_int;
   
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
   // Code in here will only be compiled if an Arduino Mega is used.
-  #define analogPins 16
-  #define digitalPins 54
+  #define analogPins 8 // Mega has 16 but GenuLog shield supports 8
+  #define digitalPins 14 // Mega has 54 but GenuLog shield supports 14
   #define ioref 5.0f
 #endif
 
@@ -484,7 +484,7 @@ void loop() {
   }
   lcd.print(tsec, DEC);
   lcd.print(" T");
-  lcd.print(temp0, 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
+  lcd.print(atemp[0], 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
   lcd.print(" V");
   lcd.print(volt3, 1);
 
@@ -499,21 +499,22 @@ void loop() {
     // In general, it is preferred to do signal processing downstream where issues are easier to fix
     // and the core data logging function is not impacted. But if an application does not use any
     // downstream processes, below is an example of calculating the temp from a TMP36.
-    if (pin == 0) {
+    // Processing in this code allows the scaled values to be displayed on the connected LCD.
+    if ((pin == 0) || (pin == 1)) { // stack a temp from 0 so atemp[pin] does not have gaps that require a bigger array
       // converting reading from voltage to temp F, for 3.3v arduino ioref = 3.3
-      temp0 = analogRead(pin); // dummy read to switch channel
+      atemp[pin] = analogRead(pin); // dummy read to switch channel
       delayMicroseconds(100); // wait for s/h
-      temp0 = analogRead(pin);
-      SERIALP.print(temp0); // output raw value
-      temp0 *= ioref;
+      atemp[pin] = analogRead(pin);
+      SERIALP.print(atemp[pin]); // output raw value
+      atemp[pin] *= ioref;
       SERIALP.print(", \"A");
       SERIALP.print(pin);
       SERIALP.print("tempF\": ");
-      temp0 /= 1024.0;
-      temp0 = (temp0 - 0.5) * 100; // converting to C, 10 mv per degree C wit 500 mV offset
-      // SERIALP.print(temp0); this line will output C
-      temp0 = (temp0 * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
-      SERIALP.print(temp0); // output tempF
+      atemp[pin] /= 1023.0;
+      atemp[pin] = (atemp[pin] - 0.5) * 100; // converting to C, 10 mv per degree C with 500 mV offset
+      // SERIALP.print(atemp[pin]); this line will output C
+      atemp[pin] = (atemp[pin] * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
+      SERIALP.print(atemp[pin]); // output tempF
     } else if (pin == 3) { // 40V input 71.5K/10K on 5V ioref
       temp_int = analogRead(pin);
       SERIALP.print(temp_int); // output raw value
@@ -554,8 +555,8 @@ void loop() {
   if (tday != now.day()) {
     yhtemp = thtemp;
     yltemp = tltemp;
-    thtemp = temp0;
-    tltemp = temp0;
+    thtemp = atemp[0];
+    tltemp = atemp[0];
     tday = now.day();
     clearLCDline(0); // clear screen once a day
     clearLCDline(1);
@@ -566,16 +567,16 @@ void loop() {
   lcd.setCursor(0, 0); // Set the cursor on the first column and first row. X, Y
   timeStamp(6);
   lcd.print(" T");
-  lcd.print(temp0, 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
+  lcd.print(atemp[0], 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
   lcd.print(" V");
   lcd.print(volt3, 1);
 
   // check if we have new high or lows
-  if (temp0 > thtemp) {
-    thtemp = temp0;
+  if (atemp[0] > thtemp) {
+    thtemp = atemp[0];
   }
-  if (temp0 < tltemp) {
-    tltemp = temp0;
+  if (atemp[0] < tltemp) {
+    tltemp = atemp[0];
   }
 
   lcd.setCursor(0, 2);
