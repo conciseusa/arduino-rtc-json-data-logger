@@ -65,10 +65,6 @@ int temp_int;
   #define ioref 5.0f
 #endif
 
-#if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__)
-  // Code in here will only be compiled if an Arduino Leonardo is used.
-#endif
-
 #if defined(__SAM3X8E__)
   // Code in here will only be compiled if an Arduino Due is used.
   #define analogPins 16
