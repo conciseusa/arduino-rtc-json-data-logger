@@ -638,14 +638,14 @@ void loop() {
   } else if ((digitalRead(6) == 1) &&  (digitalRead(5) == 0)) {
     delay(10000); // 10 sec
   } else if ((digitalRead(6) == 0) &&  (digitalRead(5) == 1)) {
-    for (int count = 0; count < 60; count++) { // 1 min
+    for (int count = 0; count < 6; count++) { // 1 min
       delay(10000); // 10 sec button scan
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
         break;
       }
     }
   } else if ((digitalRead(6) == 1) &&  (digitalRead(5) == 1)) {
-    for (int count = 0; count < 600; count++) { // 10 min
+    for (int count = 0; count < 60; count++) { // 10 min
       delay(10000); // 10 sec button scan
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
         break;
