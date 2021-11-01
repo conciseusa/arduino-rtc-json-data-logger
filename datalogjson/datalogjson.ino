@@ -42,6 +42,7 @@ int temp_int;
 // from http://forum.arduino.cc/index.php?topic=113656.0
 #if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
   // Code in here will only be compiled if an Arduino Uno (or older) is used.
+  #define arduinoVariant "Uno"
   #define analogPins 4
   #define digitalPins 14
   #define ioref 5.0f // operating voltage on an Uno, float becaused coud be 3.3 and used to scale A/D converter
@@ -49,6 +50,7 @@ int temp_int;
 
 #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__)
   // Code in here will only be compiled if an Arduino Leonardo is used.
+  #define arduinoVariant "Leonardo"
   #define analogPins 6  // A0-A5, A6-A11 (on digital pins 4, 6, 8, 9, 10, & 12, will need to convert those to analog to go above 6)
   #define digitalPins 14  // On the Leonardo, I2C is on digital pins 2 and 3 so don't use those if you need I2C
   #define ioref 5.0f // operating voltage on an Leonardo, float becaused coud be 3.3 and used to scale A/D converter
@@ -60,6 +62,7 @@ int temp_int;
   
 #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
   // Code in here will only be compiled if an Arduino Mega is used.
+  #define arduinoVariant "Mega"
   #define analogPins 8 // Mega has 16 but GenuLog shield supports 8
   #define digitalPins 14 // Mega has 54 but GenuLog shield supports 14
   #define ioref 5.0f
@@ -67,6 +70,7 @@ int temp_int;
 
 #if defined(__SAM3X8E__)
   // Code in here will only be compiled if an Arduino Due is used.
+  #define arduinoVariant "Due"
   #define analogPins 16
   #define digitalPins 54
   #define ioref 3.3f
@@ -74,6 +78,7 @@ int temp_int;
 #endif
 
 #if defined(_VARIANT_METRO_M4_WIFI_)
+  #define arduinoVariant "Metro_M4_WiFi"
   #define analogPins NUM_ANALOG_INPUTS
   #define digitalPins NUM_DIGITAL_PINS
   #define ioref 3.3f
@@ -88,9 +93,14 @@ int temp_int;
 #if defined(_BOARD_NAME_) && defined(_DTWI0_BASE)
   // _BOARD_NAME_ "chipKIT uC32" they do not have a seperate define for each board so this may collide with other chipKIT boards
   // other option is to read _BOARD_NAME_ at run time and set the needed values
+  #define arduinoVariant "chipKIT uC32"
   #define analogPins NUM_ANALOG_PINS
   #define digitalPins NUM_DIGITAL_PINS
   #define ioref 3.3f
+#endif
+
+#ifndef arduinoVariant
+  #define arduinoVariant "Unknown"
 #endif
 
 #include "RTClib.h" // Adafruit  https://www.arduino.cc/reference/en/libraries/rtclib/
@@ -331,6 +341,7 @@ void setup() {
   // output compile time / version info so can see in the field
   // Used info on http://forum.arduino.cc/index.php?topic=158014.0
   SERIALP.print("\"Compiled\": \"" __DATE__ ", " __TIME__ ", " __VERSION__ "\"");
+  SERIALP.print(", \"arduinoVariant\": \""arduinoVariant"\"");
   SERIALP.println("}");
 
   // lcd.init(); // LiquidCrystal_I2C
@@ -628,14 +639,14 @@ void loop() {
     delay(10000); // 10 sec
   } else if ((digitalRead(6) == 0) &&  (digitalRead(5) == 1)) {
     for (int count = 0; count < 60; count++) { // 1 min
-      delay(1000); // 1 sec button scan
+      delay(10000); // 10 sec button scan
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
         break;
       }
     }
   } else if ((digitalRead(6) == 1) &&  (digitalRead(5) == 1)) {
     for (int count = 0; count < 600; count++) { // 10 min
-      delay(1000); // 1 sec button scan
+      delay(10000); // 10 sec button scan
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
         break;
       }
