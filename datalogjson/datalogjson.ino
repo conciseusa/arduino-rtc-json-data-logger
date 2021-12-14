@@ -24,17 +24,22 @@
 // Tools->Board->Board Manager  Scroll down to the chipKIT and install
 // On 64b Ubuntu - sudo apt-get install libc6-i386 - More details at http://chipkit.net/wiki/index.php?title=ChipKIT_core -> 64-Bit Linux
 
+// pre declare and reused ram to keep usage down
 float atemp[2]; // used for scaling TMP36 temperature sensor on A inputs
 char thour = 99; // save temp time
 char tmin = 99;
 char tsec = 99;
 char tday = 99; // save day so know when to reset high and low
-float thtemp = -999; // set so any normal reading above
-float tltemp = 999; // set so any normal reading below
-float yhtemp = -999;
-float yltemp = 999;
+float thtemp = -999; // today high temperature set so any normal reading above
+float tltemp = 999; // today low temperature set so any normal reading below
+float yhtemp = -999; // yesterday high
+float yltemp = 999; // yesterday low
 float volt3; // used for scaling voltage on A3
-int temp_int;
+float temp_float; // temporary float
+int temp_int; // temporary int
+unsigned int delay_sec = 0; // to track the delay between samples with out RTC
+byte bitwise_status = 0;
+#define bws_no_rtc 0b10000000
 
 #include "Wire.h"
 #define SERIALP Serial // different Arduino have variuos serial ports, so control which one we use
@@ -145,13 +150,20 @@ hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander ch
 //}
 
 void timeStamp(byte output) {
-  DateTime now = rtc.now();
+  DateTime now;
+  if (!(bitwise_status & bws_no_rtc)) {
+    now = rtc.now();
+  }
 
   // timeStamp uses 2 ways to output data in the first 2 bits: Serial = 01 and LCD = 10
   // to save memory, directly output to the disired output
   // the next 2 bits have the format: whole timeStamp = 11, date only 10, time only 01
 
   if ((output & B00000011) == B0000001) {
+    if ((bitwise_status & bws_no_rtc)) {
+      SERIALP.print("No RTC");
+      return;
+    }
     if ((output & B00001000) == B00001000) {
       SERIALP.print(now.year(), DEC);
       SERIALP.print("-");
@@ -179,6 +191,10 @@ void timeStamp(byte output) {
       SERIALP.print(now.second(), DEC);
     }
   } else {
+    if ((bitwise_status & bws_no_rtc)) {
+      lcd.print("No RTC");
+      return;
+    }
     if ((output & B00001000) == B00001000) {
       lcd.print(now.year(), DEC);
       lcd.print("-");
@@ -322,15 +338,15 @@ void setup() {
   #endif // i2c_scanner
 
   // for some reason if the rtc begin is done after the lcd init, the rtc begin fails
-  while (! rtc.begin()) {
+  if (! rtc.begin()) {
     SERIALP.println("{\"Error\": \"Could not find RTC\"}");
-    delay(5000);
+    bitwise_status = bitwise_status | bws_no_rtc;
   }
 
   // line below can be used to set a time module, someday add code so RTC can be set from reading the serial port
   //rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // keep between rtc check and clock set check, uncomment, comple and run, immediately comment out, comple and run
 
-  if (rtc.lostPower()) {
+  if (!(bitwise_status & bws_no_rtc) && rtc.lostPower()) {
     SERIALP.println("{\"Error\": \"RTC lost power, Time needs to be set,\"}");
     while (1);
   }
@@ -469,35 +485,45 @@ void loop() {
   //lcd.print("Test");
   //SERIALP.println("");
   //return; // the above block tests writing to serial port and lcd with out involving other functions
+  DateTime now;
+  if (!(bitwise_status & bws_no_rtc)) {
+    now = rtc.now(); // get time and date from RTC and save in variables
+  }
+  jsonTimestamp(); // will send no RTC message
 
-  DateTime now = rtc.now();
-  jsonTimestamp();
   outputSerialNumber(1); // you can remove this if not sending data to cloud service
 
   // display prev data and time
   lcd.setCursor(0, 1);
-  if (thour<10) {
-    lcd.print("0");
+  if (!(bitwise_status & bws_no_rtc)) {
+    if (thour<10) {
+      lcd.print("0");
+    }
+    lcd.print(thour, DEC);
+    lcd.print(":");
+    if (tmin<10) {
+      lcd.print("0");
+    }
+    lcd.print(tmin, DEC);
+    lcd.print(":");
+    if (tsec<10) {
+      lcd.print("0");
+    }
+    lcd.print(tsec, DEC);
+  } else {
+    lcd.print("Dly:");
+    lcd.print(delay_sec);
   }
-  lcd.print(thour, DEC);
-  lcd.print(":");
-  if (tmin<10) {
-    lcd.print("0");
-  }
-  lcd.print(tmin, DEC);
-  lcd.print(":");
-  if (tsec<10) {
-    lcd.print("0");
-  }
-  lcd.print(tsec, DEC);
   lcd.print(" T");
   lcd.print(atemp[0], 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
   lcd.print(" V");
   lcd.print(volt3, 1);
 
-  thour = now.hour(); // save data time
-  tmin = now.minute();
-  tsec = now.second();
+  if (!(bitwise_status & bws_no_rtc)) {
+    thour = now.hour(); // save data time
+    tmin = now.minute();
+    tsec = now.second();
+  }
 
   for (int pin = 0; pin < analogPins; pin++) {
     SERIALP.print("\"A"); // A = analog
@@ -507,10 +533,10 @@ void loop() {
     // and the core data logging function is not impacted. But if an application does not use any
     // downstream processes, below is an example of calculating the temp from a TMP36.
     // Processing in this code allows the scaled values to be displayed on the connected LCD.
-    if ((pin == 0) || (pin == 1)) { // stack a temp from 0 so atemp[pin] does not have gaps that require a bigger array
+    if (pin == 0) { // stack a temp from 0 so atemp[pin] does not have gaps that require a bigger array
       // converting reading from voltage to temp F, for 3.3v arduino ioref = 3.3
-      atemp[pin] = analogRead(pin); // dummy read to switch channel
-      delayMicroseconds(100); // wait for s/h
+      //atemp[pin] = analogRead(pin); // dummy read to switch channel, recommended, but not clear if helps
+      //delayMicroseconds(100); // wait for s/h
       atemp[pin] = analogRead(pin);
       SERIALP.print(atemp[pin]); // output raw value
       atemp[pin] *= ioref;
@@ -522,17 +548,29 @@ void loop() {
       // SERIALP.print(atemp[pin]); this line will output C
       atemp[pin] = (atemp[pin] * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
       SERIALP.print(atemp[pin]); // output tempF
-    } else if (pin == 3) { // 40V input 71.5K/10K on 5V ioref
+    } else if (pin == 1 || pin == 2) { // 5V FS no input voltage divider on 5V ioref
       temp_int = analogRead(pin);
       SERIALP.print(temp_int); // output raw value
-      volt3 = temp_int<<2;
-      volt3 /= 100;
+      temp_float = temp_int;
+      temp_float /= 205;
       SERIALP.print(", \"A");
       SERIALP.print(pin);
       SERIALP.print("volt\": ");
-      SERIALP.print(volt3);
+      SERIALP.print(temp_float);
+    } else if (pin == 3 || pin == 4 || pin == 5 || pin == 6 || pin == 7) { // 40.75V FS input 71.5K/10K on 5V ioref
+      temp_int = analogRead(pin);
+      SERIALP.print(temp_int); // output raw value
+      temp_float = temp_int<<2;
+      temp_float /= 100;
+      SERIALP.print(", \"A");
+      SERIALP.print(pin);
+      SERIALP.print("volt\": ");
+      SERIALP.print(temp_float);
+      if (pin == 3) {
+        volt3 = temp_float;
+      }
     } else {
-      SERIALP.print(analogRead(pin));
+      SERIALP.print(analogRead(pin)); // if no special treatment, send raw value
     }
     if (pin < analogPins - 1) { // do not add , on last item
       SERIALP.print(", ");
@@ -559,7 +597,7 @@ void loop() {
   SERIALP.println("}");
 
   // if new day reset high and low trackers, do after data set
-  if (tday != now.day()) {
+  if (!(bitwise_status & bws_no_rtc) && (tday != now.day())) {
     yhtemp = thtemp;
     yltemp = tltemp;
     thtemp = atemp[0];
@@ -587,17 +625,22 @@ void loop() {
   }
 
   lcd.setCursor(0, 2);
-  lcd.print(now.year() - 2000, DEC);
-  lcd.print("-");
-  if (now.month()<10) {
-    lcd.print("0");
+  if (!(bitwise_status & bws_no_rtc)) {
+    lcd.print(now.year() - 2000, DEC);
+    lcd.print("-");
+    if (now.month()<10) {
+      lcd.print("0");
+    }
+    lcd.print(now.month(), DEC);
+    lcd.print("-");
+    if (now.day()<10) {
+      lcd.print("0");
+    }
+    lcd.print(now.day(), DEC);
+  } else {
+    lcd.print("No RTC  ");
   }
-  lcd.print(now.month(), DEC);
-  lcd.print("-");
-  if (now.day()<10) {
-    lcd.print("0");
-  }
-  lcd.print(now.day(), DEC);
+
   lcd.print(" H");
   if (thtemp>99 || thtemp<0) {
     lcd.print(thtemp, 0);
@@ -632,14 +675,18 @@ void loop() {
   }
 
   digitalWrite(LED_BUILTIN, LOW);
+  delay_sec = 0;
   // Control sample speed with D5, D6. Default to 10 min.
   if ((digitalRead(6) == 0) &&  (digitalRead(5) == 0)) {
     delay(1000); // 1 sec
+    delay_sec = 1;
   } else if ((digitalRead(6) == 1) &&  (digitalRead(5) == 0)) {
     delay(10000); // 10 sec
+    delay_sec = 10;
   } else if ((digitalRead(6) == 0) &&  (digitalRead(5) == 1)) {
     for (int count = 0; count < 6; count++) { // 1 min
       delay(10000); // 10 sec button scan
+      delay_sec += 10;
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
         break;
       }
@@ -647,6 +694,7 @@ void loop() {
   } else if ((digitalRead(6) == 1) &&  (digitalRead(5) == 1)) {
     for (int count = 0; count < 60; count++) { // 10 min
       delay(10000); // 10 sec button scan
+      delay_sec += 10;
       if (digitalRead(7) == 0) { // use pushbutton to cut short long sleep times
         break;
       }
