@@ -39,7 +39,14 @@ float temp_float; // temporary float
 int temp_int; // temporary int
 unsigned int delay_sec = 0; // to track the delay between samples with out RTC
 byte bitwise_status = 0;
-#define bws_no_rtc 0b10000000
+#define BWS_NO_RTC 0b10000000
+
+// #define SETPOINT_HIGH_TEMP 72 // comment out to turn off cooling
+#define SETPOINT_HIGH_HYSTERESIS 1
+#define SETPOINT_HIGH_CONTROL 9 // D pin for cooling
+// #define SETPOINT_LOW_TEMP 68 // comment out to turn off heating
+#define SETPOINT_LOW_HYSTERESIS 1
+#define SETPOINT_LOW_CONTROL 8 // D pin for heating
 
 #include "Wire.h"
 #define SERIALP Serial // different Arduino have variuos serial ports, so control which one we use
@@ -151,7 +158,7 @@ hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander ch
 
 void timeStamp(byte output) {
   DateTime now;
-  if (!(bitwise_status & bws_no_rtc)) {
+  if (!(bitwise_status & BWS_NO_RTC)) {
     now = rtc.now();
   }
 
@@ -160,7 +167,7 @@ void timeStamp(byte output) {
   // the next 2 bits have the format: whole timeStamp = 11, date only 10, time only 01
 
   if ((output & B00000011) == B0000001) {
-    if ((bitwise_status & bws_no_rtc)) {
+    if ((bitwise_status & BWS_NO_RTC)) {
       SERIALP.print("No RTC");
       return;
     }
@@ -191,7 +198,7 @@ void timeStamp(byte output) {
       SERIALP.print(now.second(), DEC);
     }
   } else {
-    if ((bitwise_status & bws_no_rtc)) {
+    if ((bitwise_status & BWS_NO_RTC)) {
       lcd.print("No RTC");
       return;
     }
@@ -228,7 +235,7 @@ void jsonTimestamp() {
   // starts off the json line with a timestamp
   SERIALP.print("{\"Time\": \""); // {"Time": "2020-5-14T15:00:06"
   timeStamp(13);
-  SERIALP.print("\", ");
+  SERIALP.print("\"");
 }
 
 void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
@@ -241,7 +248,7 @@ void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
     if (output == 1) {
       SERIALP.print("\"SerialNumber\": \"Error: "); // "SerialNumber": "FFFFFFFFFFFFFFFF"
       SERIALP.print(count); // https://www.arduino.cc/en/Reference/WireEndTransmission for error codes
-      SERIALP.print("\", ");
+      SERIALP.print("\"");
     } else {
       lcd.print("SerialNumberError: ");
       lcd.print(count); // https://www.arduino.cc/en/Reference/WireEndTransmission for error codes
@@ -252,7 +259,7 @@ void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
   Wire.beginTransmission(0x58);
   Wire.requestFrom(0x58, 16);
   if (output == 1) {
-    SERIALP.print("\"SerialNumber\": \""); // "SerialNumber": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+    SERIALP.print(", \"SerialNumber\": \""); // "SerialNumber": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
   }
   while(Wire.available()) {    // slave may send less than requested
     unsigned char c = Wire.read();    // receive a byte as character
@@ -275,7 +282,7 @@ void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
     }
   }
   if (output == 1) {
-    SERIALP.print("\", ");
+    SERIALP.print("\"");
   }
 }
 
@@ -340,13 +347,13 @@ void setup() {
   // for some reason if the rtc begin is done after the lcd init, the rtc begin fails
   if (! rtc.begin()) {
     SERIALP.println("{\"Error\": \"Could not find RTC\"}");
-    bitwise_status = bitwise_status | bws_no_rtc;
+    bitwise_status = bitwise_status | BWS_NO_RTC;
   }
 
   // line below can be used to set a time module, someday add code so RTC can be set from reading the serial port
   //rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // keep between rtc check and clock set check, uncomment, comple and run, immediately comment out, comple and run
 
-  if (!(bitwise_status & bws_no_rtc) && rtc.lostPower()) {
+  if (!(bitwise_status & BWS_NO_RTC) && rtc.lostPower()) {
     SERIALP.println("{\"Error\": \"RTC lost power, Time needs to be set,\"}");
     while (1);
   }
@@ -356,7 +363,7 @@ void setup() {
   outputSerialNumber(1); // you can remove this if not sending data to cloud service
   // output compile time / version info so can see in the field
   // Used info on http://forum.arduino.cc/index.php?topic=158014.0
-  SERIALP.print("\"Compiled\": \"" __DATE__ ", " __TIME__ ", " __VERSION__ "\"");
+  SERIALP.print(", \"Compiled\": \"" __DATE__ ", " __TIME__ ", " __VERSION__ "\"");
   SERIALP.print(", \"arduinoVariant\": \""arduinoVariant"\"");
   SERIALP.println("}");
 
@@ -477,6 +484,15 @@ void setup() {
   pinMode(12, INPUT_PULLUP);
   pinMode(13, OUTPUT);  // LED
 
+  // setup for setpoint
+  #if defined(SETPOINT_HIGH_TEMP)
+    pinMode(SETPOINT_HIGH_CONTROL, OUTPUT);
+  #endif
+  #if defined(SETPOINT_LOW_TEMP)
+    pinMode(SETPOINT_LOW_CONTROL, OUTPUT);
+  #endif
+  
+
 } // end setup()
 
 void loop() {
@@ -486,16 +502,15 @@ void loop() {
   //SERIALP.println("");
   //return; // the above block tests writing to serial port and lcd with out involving other functions
   DateTime now;
-  if (!(bitwise_status & bws_no_rtc)) {
+  if (!(bitwise_status & BWS_NO_RTC)) {
     now = rtc.now(); // get time and date from RTC and save in variables
   }
   jsonTimestamp(); // will send no RTC message
-
-  outputSerialNumber(1); // you can remove this if not sending data to cloud service
+  SERIALP.print(", ");
 
   // display prev data and time
   lcd.setCursor(0, 1);
-  if (!(bitwise_status & bws_no_rtc)) {
+  if (!(bitwise_status & BWS_NO_RTC)) {
     if (thour<10) {
       lcd.print("0");
     }
@@ -519,7 +534,7 @@ void loop() {
   lcd.print(" V");
   lcd.print(volt3, 1);
 
-  if (!(bitwise_status & bws_no_rtc)) {
+  if (!(bitwise_status & BWS_NO_RTC)) {
     thour = now.hour(); // save data time
     tmin = now.minute();
     tsec = now.second();
@@ -593,11 +608,13 @@ void loop() {
       SERIALP.print(", ");
     }
   }
-  
+
+  outputSerialNumber(1); // last so not using space early in the line, you can remove this if not sending data to cloud service
+
   SERIALP.println("}");
 
   // if new day reset high and low trackers, do after data set
-  if (!(bitwise_status & bws_no_rtc) && (tday != now.day())) {
+  if (!(bitwise_status & BWS_NO_RTC) && (tday != now.day())) {
     yhtemp = thtemp;
     yltemp = tltemp;
     thtemp = atemp[0];
@@ -625,7 +642,7 @@ void loop() {
   }
 
   lcd.setCursor(0, 2);
-  if (!(bitwise_status & bws_no_rtc)) {
+  if (!(bitwise_status & BWS_NO_RTC)) {
     lcd.print(now.year() - 2000, DEC);
     lcd.print("-");
     if (now.month()<10) {
@@ -673,6 +690,22 @@ void loop() {
       lcd.print((char) rec_char);
     }
   }
+
+#if defined(SETPOINT_HIGH_TEMP)
+  if (atemp[0] > SETPOINT_HIGH_TEMP) {
+    digitalWrite(SETPOINT_HIGH_CONTROL, LOW); // active low cooling
+  } else if (atemp[0] < SETPOINT_HIGH_TEMP - SETPOINT_HIGH_HYSTERESIS) {
+    digitalWrite(SETPOINT_HIGH_CONTROL, HIGH);
+  }
+#endif
+
+#if defined(SETPOINT_LOW_TEMP)
+  if (atemp[0] < SETPOINT_LOW_TEMP) {
+    digitalWrite(SETPOINT_LOW_CONTROL, LOW); // active low heating
+  } else if (atemp[0] > SETPOINT_LOW_TEMP + SETPOINT_LOW_HYSTERESIS) {
+    digitalWrite(SETPOINT_LOW_CONTROL, HIGH);
+  }
+#endif
 
   digitalWrite(LED_BUILTIN, LOW);
   delay_sec = 0;
