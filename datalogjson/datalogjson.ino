@@ -1,3 +1,4 @@
+#define md5HASH "f35e20e84c621842517277b86d2b207b"
 
 // Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
 // A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
@@ -286,6 +287,31 @@ void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
   }
 }
 
+#ifndef md5HASH
+#endif
+void outputMd5Hash(byte output) { // output to serial = 1, to lcd = 2
+  static const char hash[] = md5HASH;
+  int i;
+
+  if (output == 1) {
+    SERIALP.print(", \"md5Hash\": \""); // "md5Hash": "d2c8f43cdeda8221736a0445f4488adc" 32 chars
+  }
+  for (i = 0; i < strlen(hash); i++) {
+    char c = hash[i];    // receive a byte as character
+    if (output == 1) {
+      SERIALP.print(c);
+    } else {
+      lcd.print(c);
+      if(i == 15) {
+        lcd.setCursor(0, 2);
+      }
+    }
+  } // end for
+  if (output == 1) {
+    SERIALP.print("\"");
+  }
+}
+
 void setup() {
   int status;
 
@@ -361,6 +387,7 @@ void setup() {
   SERIALP.println("");
   jsonTimestamp(); // start up message time
   outputSerialNumber(1); // you can remove this if not sending data to cloud service
+  outputMd5Hash(1); // show the check sum of the source code
   // output compile time / version info so can see in the field
   // Used info on http://forum.arduino.cc/index.php?topic=158014.0
   SERIALP.print(", \"Compiled\": \"" __DATE__ ", " __TIME__ ", " __VERSION__ "\"");
@@ -466,8 +493,29 @@ void setup() {
   lcd.print("Serial #: ");
   lcd.setCursor(0, 1);
   outputSerialNumber(2);
+  for (int count = 0; count < 2;) {
+    delay(1000); // 1 sec button scan
+    if (digitalRead(7) != 0) { // use pushbutton to hold display
+      count++;
+    }
+  }
 
-  delay(5000);
+  clearLCDline(0);
+  clearLCDline(1);
+#if defined(LCD_ROWS) && LCD_ROWS == 4
+  clearLCDline(2);
+  clearLCDline(3);
+#endif
+
+  lcd.print("md5 hash: ");
+  lcd.setCursor(0, 1);
+  outputMd5Hash(2);
+  for (int count = 0; count < 2; ) {
+    delay(1000); // 1 sec button scan
+    if (digitalRead(7) != 0) { // use pushbutton to hold display
+      count++;
+    }
+  }
 
   //pinMode(0, INPUT_PULLUP); // warning - may disturb serial port
   //pinMode(1, INPUT_PULLUP); // warning - may disturb serial port
