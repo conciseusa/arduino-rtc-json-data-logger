@@ -1,4 +1,4 @@
-#define md5HASH "f35e20e84c621842517277b86d2b207b"
+#define md5HASH "37827ff7eabddba75b1e9451fee2c030"
 
 // Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
 // A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
@@ -39,15 +39,20 @@ float volt3; // used for scaling voltage on A3
 float temp_float; // temporary float
 int temp_int; // temporary int
 unsigned int delay_sec = 0; // to track the delay between samples with out RTC
+uint32_t lastTimestamp = 0;
+float elapsedTimestamp = 0; // float because divided by 36
+float setpoint_hdc = 0;
+float setpoint_ldc = 0;
 byte bitwise_status = 0;
 #define BWS_NO_RTC 0b10000000
 
-// #define SETPOINT_HIGH_TEMP 72 // comment out to turn off cooling
+#define SETPOINT_HIGH_TEMP 70 // comment out to turn off cooling
 #define SETPOINT_HIGH_HYSTERESIS 1
 #define SETPOINT_HIGH_CONTROL 9 // D pin for cooling
-// #define SETPOINT_LOW_TEMP 68 // comment out to turn off heating
+#define SETPOINT_LOW_TEMP 68 // comment out to turn off heating
 #define SETPOINT_LOW_HYSTERESIS 1
 #define SETPOINT_LOW_CONTROL 8 // D pin for heating
+#define DUTY_CYCLE_AVG_TIME 18 // multiply by 100 for the number of seconds to average DC over
 
 #include "Wire.h"
 #define SERIALP Serial // different Arduino have variuos serial ports, so control which one we use
@@ -539,7 +544,6 @@ void setup() {
   #if defined(SETPOINT_LOW_TEMP)
     pinMode(SETPOINT_LOW_CONTROL, OUTPUT);
   #endif
-  
 
 } // end setup()
 
@@ -579,8 +583,15 @@ void loop() {
   }
   lcd.print(" T");
   lcd.print(atemp[0], 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
+
+#if defined(SETPOINT_LOW_TEMP)
+  lcd.print(" LDC");
+  lcd.print(setpoint_ldc, 0); // show duty cycle
+  lcd.print(' ');
+#else
   lcd.print(" V");
-  lcd.print(volt3, 1);
+  lcd.print(volt3, 1); // show battery, or what is on volt3
+#endif
 
   if (!(bitwise_status & BWS_NO_RTC)) {
     thour = now.hour(); // save data time
@@ -657,6 +668,15 @@ void loop() {
     }
   }
 
+#if defined(SETPOINT_LOW_TEMP)
+  SERIALP.print(", \"setpoint_ldc\": ");
+  SERIALP.print(setpoint_ldc); // add duty cycle
+#endif
+#if defined(SETPOINT_HIGH_TEMP)
+  SERIALP.print(", \"setpoint_hdc\": ");
+  SERIALP.print(setpoint_hdc);
+#endif
+
   outputSerialNumber(1); // last so not using space early in the line, you can remove this if not sending data to cloud service
 
   SERIALP.println("}");
@@ -678,8 +698,15 @@ void loop() {
   timeStamp(6);
   lcd.print(" T");
   lcd.print(atemp[0], 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
+
+#if defined(SETPOINT_HIGH_TEMP)
+  lcd.print(" HDC");
+  lcd.print(setpoint_hdc, 0);
+  lcd.print(' ');
+#else
   lcd.print(" V");
-  lcd.print(volt3, 1);
+  lcd.print(volt3, 1); // show battery, or what is on volt3
+#endif
 
   // check if we have new high or lows
   if (atemp[0] > thtemp) {
@@ -739,21 +766,48 @@ void loop() {
     }
   }
 
+  if (lastTimestamp == 0) {
+    lastTimestamp = now.unixtime(); // so first loop does not create a huge elapsedTimestamp
+  }
+  if (!(bitwise_status & BWS_NO_RTC)) {
+    elapsedTimestamp = now.unixtime() - lastTimestamp; // 1642623145
+  } else {
+    elapsedTimestamp = 0;
+  }
 #if defined(SETPOINT_HIGH_TEMP)
   if (atemp[0] > SETPOINT_HIGH_TEMP) {
     digitalWrite(SETPOINT_HIGH_CONTROL, LOW); // active low cooling
+    setpoint_hdc += elapsedTimestamp / DUTY_CYCLE_AVG_TIME;
+    if (setpoint_hdc > 100) {
+      setpoint_hdc = 100;
+    }
   } else if (atemp[0] < SETPOINT_HIGH_TEMP - SETPOINT_HIGH_HYSTERESIS) {
     digitalWrite(SETPOINT_HIGH_CONTROL, HIGH);
+    setpoint_hdc -= elapsedTimestamp / DUTY_CYCLE_AVG_TIME;
+    if (setpoint_hdc < 0) {
+      setpoint_hdc = 0;
+    }
   }
 #endif
 
 #if defined(SETPOINT_LOW_TEMP)
   if (atemp[0] < SETPOINT_LOW_TEMP) {
     digitalWrite(SETPOINT_LOW_CONTROL, LOW); // active low heating
+    setpoint_ldc += elapsedTimestamp / DUTY_CYCLE_AVG_TIME;
+    if (setpoint_ldc > 100) {
+      setpoint_ldc = 100;
+    }
   } else if (atemp[0] > SETPOINT_LOW_TEMP + SETPOINT_LOW_HYSTERESIS) {
     digitalWrite(SETPOINT_LOW_CONTROL, HIGH);
+    setpoint_ldc -= elapsedTimestamp / DUTY_CYCLE_AVG_TIME;
+    if (setpoint_ldc < 0) {
+      setpoint_ldc = 0;
+    }
   }
 #endif
+  if (!(bitwise_status & BWS_NO_RTC)) {
+    lastTimestamp = now.unixtime();
+  }
 
   digitalWrite(LED_BUILTIN, LOW);
   delay_sec = 0;
