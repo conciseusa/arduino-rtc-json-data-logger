@@ -41,18 +41,26 @@ int temp_int; // temporary int
 unsigned int delay_sec = 0; // to track the delay between samples with out RTC
 uint32_t lastTimestamp = 0;
 float elapsedTimestamp = 0; // float because divided by 36
-float setpoint_hdc = 0;
-float setpoint_ldc = 0;
+unsigned char duty_cycle_reducing_count = 0; // number of samples signal was active
+unsigned char duty_cycle_reducing = 0; // calculated duty cycle
+unsigned char duty_cycle_raising_count = 0; // samples in active state
+unsigned char duty_cycle_raising = 0;
+unsigned char duty_cycle_total_count = 0; // total samples in a time frame, ratio with active count gets duty cycle
+unsigned char setpoint_restart_delay = 0; // set to SETPOINT_RESTART_DELAY at turn off, 0 to reenable
 byte bitwise_status = 0;
 #define BWS_NO_RTC 0b10000000
 
-#define SETPOINT_HIGH_TEMP 70 // comment out to turn off cooling
+//#define SETPOINT_HIGH_LIMIT 70 // comment out to turn off reducing, will still monitor duty cycle
 #define SETPOINT_HIGH_HYSTERESIS 1
-#define SETPOINT_HIGH_CONTROL 9 // D pin for cooling
-#define SETPOINT_LOW_TEMP 68 // comment out to turn off heating
+#define SETPOINT_DC_HIGH_PIN 9 // D pin for reducing
+#define DUTY_CYCLE_HIGH_DISABLE 0 // 1 = do not calculate or display duty cycle
+//#define SETPOINT_LOW_LIMIT 68 // comment out to turn off raising
 #define SETPOINT_LOW_HYSTERESIS 1
-#define SETPOINT_LOW_CONTROL 8 // D pin for heating
-#define DUTY_CYCLE_AVG_TIME 18 // multiply by 100 for the number of seconds to average DC over
+#define SETPOINT_DC_LOW_PIN 8 // D pin for raising
+#define DUTY_CYCLE_LOW_DISABLE 0
+#define SETPOINT_RESTART_DELAY 2 // cycles to wait until turning on raising/reducing after last phase ended
+#define DUTY_CYCLE_FRAME_SAMPLES 100 // number of samples in a time frame, roll to next when full
+#define DUTY_CYCLE_FRAME_ROLLOVER .2 // the amount of the next frame to seed with the current duty cycle
 
 #include "Wire.h"
 #define SERIALP Serial // different Arduino have variuos serial ports, so control which one we use
@@ -538,11 +546,11 @@ void setup() {
   pinMode(13, OUTPUT);  // LED
 
   // setup for setpoint
-  #if defined(SETPOINT_HIGH_TEMP)
-    pinMode(SETPOINT_HIGH_CONTROL, OUTPUT);
+  #if defined(SETPOINT_HIGH_LIMIT)
+    pinMode(SETPOINT_DC_HIGH_PIN, OUTPUT);
   #endif
-  #if defined(SETPOINT_LOW_TEMP)
-    pinMode(SETPOINT_LOW_CONTROL, OUTPUT);
+  #if defined(SETPOINT_LOW_LIMIT)
+    pinMode(SETPOINT_DC_LOW_PIN, OUTPUT);
   #endif
 
 } // end setup()
@@ -584,11 +592,11 @@ void loop() {
   lcd.print(" T");
   lcd.print(atemp[0], 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
 
-#if defined(SETPOINT_LOW_TEMP)
+#if DUTY_CYCLE_LOW_DISABLE == 0
   lcd.print(" LDC");
-  lcd.print(setpoint_ldc, 0); // show duty cycle
+  lcd.print(duty_cycle_raising); // show duty cycle
   lcd.print(' ');
-#else
+#else 
   lcd.print(" V");
   lcd.print(volt3, 1); // show battery, or what is on volt3
 #endif
@@ -668,18 +676,14 @@ void loop() {
     }
   }
 
-#if defined(SETPOINT_LOW_TEMP)
-  SERIALP.print(", \"setpoint_ldc\": ");
-  SERIALP.print(setpoint_ldc); // add duty cycle
+#if DUTY_CYCLE_LOW_DISABLE == 0
+  SERIALP.print(", \"duty_cycle_raising\": ");
+  SERIALP.print(duty_cycle_raising);
 #endif
-#if defined(SETPOINT_HIGH_TEMP)
-  SERIALP.print(", \"setpoint_hdc\": ");
-  SERIALP.print(setpoint_hdc);
+#if DUTY_CYCLE_HIGH_DISABLE == 0
+  SERIALP.print(", \"duty_cycle_reducing\": ");
+  SERIALP.print(duty_cycle_reducing);
 #endif
-
-  outputSerialNumber(1); // last so not using space early in the line, you can remove this if not sending data to cloud service
-
-  SERIALP.println("}");
 
   // if new day reset high and low trackers, do after data set
   if (!(bitwise_status & BWS_NO_RTC) && (tday != now.day())) {
@@ -699,9 +703,9 @@ void loop() {
   lcd.print(" T");
   lcd.print(atemp[0], 0); // print Temperature 1 = one decimal point of precision, 0 = whole number
 
-#if defined(SETPOINT_HIGH_TEMP)
+#if DUTY_CYCLE_HIGH_DISABLE == 0
   lcd.print(" HDC");
-  lcd.print(setpoint_hdc, 0);
+  lcd.print(duty_cycle_reducing);
   lcd.print(' ');
 #else
   lcd.print(" V");
@@ -774,42 +778,81 @@ void loop() {
   } else {
     elapsedTimestamp = 0;
   }
-#if defined(SETPOINT_HIGH_TEMP)
-  if (atemp[0] > SETPOINT_HIGH_TEMP) {
-    digitalWrite(SETPOINT_HIGH_CONTROL, LOW); // active low cooling
-    setpoint_hdc += elapsedTimestamp / DUTY_CYCLE_AVG_TIME;
-    if (setpoint_hdc > 100) {
-      setpoint_hdc = 100;
-    }
-  } else if (atemp[0] < SETPOINT_HIGH_TEMP - SETPOINT_HIGH_HYSTERESIS) {
-    digitalWrite(SETPOINT_HIGH_CONTROL, HIGH);
-    setpoint_hdc -= elapsedTimestamp / DUTY_CYCLE_AVG_TIME;
-    if (setpoint_hdc < 0) {
-      setpoint_hdc = 0;
-    }
+
+#if defined(SETPOINT_HIGH_LIMIT) || defined(SETPOINT_LOW_LIMIT)
+  if (setpoint_restart_delay > 0) {
+    setpoint_restart_delay--;
   }
 #endif
 
-#if defined(SETPOINT_LOW_TEMP)
-  if (atemp[0] < SETPOINT_LOW_TEMP) {
-    digitalWrite(SETPOINT_LOW_CONTROL, LOW); // active low heating
-    setpoint_ldc += elapsedTimestamp / DUTY_CYCLE_AVG_TIME;
-    if (setpoint_ldc > 100) {
-      setpoint_ldc = 100;
-    }
-  } else if (atemp[0] > SETPOINT_LOW_TEMP + SETPOINT_LOW_HYSTERESIS) {
-    digitalWrite(SETPOINT_LOW_CONTROL, HIGH);
-    setpoint_ldc -= elapsedTimestamp / DUTY_CYCLE_AVG_TIME;
-    if (setpoint_ldc < 0) {
-      setpoint_ldc = 0;
-    }
+#if defined(SETPOINT_HIGH_LIMIT)
+  if ((atemp[0] > SETPOINT_HIGH_LIMIT) && (setpoint_restart_delay == 0)) {
+    digitalWrite(SETPOINT_DC_HIGH_PIN, LOW); // active low reducing
+  } else if (atemp[0] < SETPOINT_HIGH_LIMIT - SETPOINT_HIGH_HYSTERESIS) {
+    digitalWrite(SETPOINT_DC_HIGH_PIN, HIGH); // turn off once hysteresis cleared
+    setpoint_restart_delay = SETPOINT_RESTART_DELAY;
   }
 #endif
+
+#if defined(SETPOINT_LOW_LIMIT)
+  if ((atemp[0] < SETPOINT_LOW_LIMIT) && (setpoint_restart_delay == 0)) {
+    digitalWrite(SETPOINT_DC_LOW_PIN, LOW); // active low raising
+  } else if (atemp[0] > SETPOINT_LOW_LIMIT + SETPOINT_LOW_HYSTERESIS) {
+    digitalWrite(SETPOINT_DC_LOW_PIN, HIGH); // turn off once hysteresis cleared
+    setpoint_restart_delay = SETPOINT_RESTART_DELAY;
+  }
+#endif
+
+#if DUTY_CYCLE_LOW_DISABLE == 0 || DUTY_CYCLE_HIGH_DISABLE == 0
+  duty_cycle_total_count++;
+#endif
+
+#if DUTY_CYCLE_LOW_DISABLE == 0
+  if (digitalRead(SETPOINT_DC_LOW_PIN) == 0) {
+    duty_cycle_raising_count++;
+  }
+  temp_int = duty_cycle_raising_count;
+  temp_int *= 100;
+  duty_cycle_raising = temp_int / duty_cycle_total_count;
+#endif
+
+#if DUTY_CYCLE_HIGH_DISABLE == 0
+  if (digitalRead(SETPOINT_DC_HIGH_PIN) == 0) {
+    duty_cycle_reducing_count++;
+  }
+  temp_int = duty_cycle_reducing_count;
+  temp_int *= 100;
+  duty_cycle_reducing = temp_int / duty_cycle_total_count;
+#endif
+
+#if DUTY_CYCLE_LOW_DISABLE == 0 || DUTY_CYCLE_HIGH_DISABLE == 0
+  SERIALP.print(", \"duty_cycle_raising_count.duty_cycle_total_count\": ");
+  SERIALP.print(duty_cycle_raising_count);
+  SERIALP.print(".");
+  SERIALP.print(duty_cycle_total_count);
+  if (duty_cycle_total_count >= DUTY_CYCLE_FRAME_SAMPLES) { // rollover so old samples fade
+    SERIALP.print(", \"duty_cycle_frame_rollover\": ");
+    SERIALP.print(DUTY_CYCLE_FRAME_SAMPLES);
+    duty_cycle_total_count = DUTY_CYCLE_FRAME_ROLLOVER * DUTY_CYCLE_FRAME_SAMPLES;
+#if DUTY_CYCLE_LOW_DISABLE == 0
+    duty_cycle_raising_count = DUTY_CYCLE_FRAME_ROLLOVER * duty_cycle_raising_count;
+#endif
+#if DUTY_CYCLE_HIGH_DISABLE == 0
+    duty_cycle_reducing_count = DUTY_CYCLE_FRAME_ROLLOVER * duty_cycle_reducing_count;
+#endif
+  }
+#endif
+
+  // add time frame rollover
+
   if (!(bitwise_status & BWS_NO_RTC)) {
     lastTimestamp = now.unixtime();
   }
 
-  digitalWrite(LED_BUILTIN, LOW);
+  outputSerialNumber(1); // last so not using space early in the line, you can remove this if not sending data to cloud service
+  SERIALP.println("}");
+
+  digitalWrite(LED_BUILTIN, LOW); // start of waiting for next processing cycle
   delay_sec = 0;
   // Control sample speed with D5, D6. Default to 10 min.
   if ((digitalRead(6) == 0) &&  (digitalRead(5) == 0)) {
