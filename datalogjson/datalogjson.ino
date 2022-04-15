@@ -1,4 +1,4 @@
-#define md5HASH "37827ff7eabddba75b1e9451fee2c030"
+#define md5HASH "50ffc70ac4ce00558bed523892742f79"
 
 // Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
 // A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
@@ -47,14 +47,15 @@ unsigned char duty_cycle_raising_count = 0; // samples in active state
 unsigned char duty_cycle_raising = 0;
 unsigned char duty_cycle_total_count = 0; // total samples in a time frame, ratio with active count gets duty cycle
 unsigned char setpoint_restart_delay = 0; // set to SETPOINT_RESTART_DELAY at turn off, 0 to reenable
-byte bitwise_status = 0;
+byte bitwise_status = 0b01000000;
 #define BWS_NO_RTC 0b10000000
+#define BWS_NO_DATA 6 // suppress prev data until a read is made
 
-//#define SETPOINT_HIGH_LIMIT 70 // comment out to turn off reducing, will still monitor duty cycle
+#define SETPOINT_HIGH_LIMIT 70 // comment out to turn off reducing, will still monitor duty cycle
 #define SETPOINT_HIGH_HYSTERESIS 1
 #define SETPOINT_DC_HIGH_PIN 9 // D pin for reducing
 #define DUTY_CYCLE_HIGH_DISABLE 0 // 1 = do not calculate or display duty cycle
-//#define SETPOINT_LOW_LIMIT 68 // comment out to turn off raising
+#define SETPOINT_LOW_LIMIT 68 // comment out to turn off raising
 #define SETPOINT_LOW_HYSTERESIS 1
 #define SETPOINT_DC_LOW_PIN 8 // D pin for raising
 #define DUTY_CYCLE_LOW_DISABLE 0
@@ -97,8 +98,8 @@ byte bitwise_status = 0;
 #if defined(__SAM3X8E__)
   // Code in here will only be compiled if an Arduino Due is used.
   #define arduinoVariant "Due"
-  #define analogPins 16
-  #define digitalPins 54
+  #define analogPins 8 // Due has 16 but GenuLog shield supports 8
+  #define digitalPins 14 // Due has 54 but GenuLog shield supports 14
   #define ioref 3.3f
   #define Wire Wire1 // this is needed on Due
 #endif
@@ -328,14 +329,14 @@ void outputMd5Hash(byte output) { // output to serial = 1, to lcd = 2
 void setup() {
   int status;
 
-  #if defined(USE_PIO_SERCOM)
-    // Assign pins 0 & 1 SERCOM functionality on Metro M4
-    pinPeripheral(0, PIO_SERCOM_ALT);
-    pinPeripheral(1, PIO_SERCOM_ALT);
-  #endif
+#if defined(USE_PIO_SERCOM)
+  // Assign pins 0 & 1 SERCOM functionality on Metro M4
+  pinPeripheral(0, PIO_SERCOM_ALT);
+  pinPeripheral(1, PIO_SERCOM_ALT);
+#endif
 
   // Open serial communications and wait for port to open:
-  #if defined(USE_SERIAL1)
+#if defined(USE_SERIAL1)
   Serial1.begin(9600);
   while (!Serial1) {
     ; // wait for serial port to connect. Needed for native USB port only
@@ -345,12 +346,12 @@ void setup() {
   while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
   }
-  #endif
+#endif
   // SERIALP.print("Test Serial first."); // use to test serial port before anything else jams things up
 
   Wire.begin(); // seems we do not need this, things seem to work the same if called or not called
 
-  #if 1 // i2c_scanner can be handyfor troubleshooting - https://playground.arduino.cc/Main/I2cScanner/
+#if 1 // i2c_scanner can be handyfor troubleshooting - https://playground.arduino.cc/Main/I2cScanner/
   byte error, address;
   int nDevices;
  
@@ -381,7 +382,7 @@ void setup() {
     SERIALP.println("No I2C devices found\n");
   else
     SERIALP.println("Scan done\n");
-  #endif // i2c_scanner
+#endif // i2c_scanner
 
   // for some reason if the rtc begin is done after the lcd init, the rtc begin fails
   if (! rtc.begin()) {
@@ -418,7 +419,7 @@ void setup() {
   }
   lcd.setCursor(0, 0); // Set the cursor on the first column and first row. X, Y
 
-  #if 0
+#if 0
   // The code below attempts put OpenLog in command mode, send a init command, display the return text on the lcd, and reset back to recording mode
   // The code works putting OpenLog in command mode and sending a command, but quickly runs into issues due to the lcd overflowing.
   // This code can be a start for reading from OpenLog, but needs more work.
@@ -478,7 +479,7 @@ void setup() {
   delay(1000);
   SERIALP.println(""); // restart with a newline
   while(Serial.available()) {Serial.read();} // clear the serial buffer
-  #endif // OpenLog RX
+#endif // OpenLog RX
 
   //ExternalEEPROM eeMem;
   //if (eeMem.begin(0b1010000) == false) { // , Wire1 0b1011(A2 A1 A0): a AT24CS08 I2C EEPROM w/ 128-bit (16 bytes) serial #
@@ -503,10 +504,11 @@ void setup() {
   clearLCDline(3);
 #endif
 
+  pinMode(7, INPUT_PULLUP);
   lcd.print("Serial #: ");
   lcd.setCursor(0, 1);
   outputSerialNumber(2);
-  for (int count = 0; count < 2;) {
+  for (char count = 0; count < 2;) {
     delay(1000); // 1 sec button scan
     if (digitalRead(7) != 0) { // use pushbutton to hold display
       count++;
@@ -523,7 +525,7 @@ void setup() {
   lcd.print("md5 hash: ");
   lcd.setCursor(0, 1);
   outputMd5Hash(2);
-  for (int count = 0; count < 2; ) {
+  for (char count = 0; count < 2; ) {
     delay(1000); // 1 sec button scan
     if (digitalRead(7) != 0) { // use pushbutton to hold display
       count++;
@@ -537,7 +539,7 @@ void setup() {
   pinMode(4, INPUT_PULLUP);
   pinMode(5, INPUT_PULLUP);
   pinMode(6, INPUT_PULLUP);
-  pinMode(7, INPUT_PULLUP);
+  // pinMode(7, INPUT_PULLUP); set above
   pinMode(8, INPUT_PULLUP);
   pinMode(9, INPUT_PULLUP);
   pinMode(10, INPUT_PULLUP);
@@ -546,12 +548,14 @@ void setup() {
   pinMode(13, OUTPUT);  // LED
 
   // setup for setpoint
-  #if defined(SETPOINT_HIGH_LIMIT)
-    pinMode(SETPOINT_DC_HIGH_PIN, OUTPUT);
-  #endif
-  #if defined(SETPOINT_LOW_LIMIT)
-    pinMode(SETPOINT_DC_LOW_PIN, OUTPUT);
-  #endif
+#if defined(SETPOINT_HIGH_LIMIT)
+  digitalWrite(SETPOINT_DC_HIGH_PIN, HIGH);
+  pinMode(SETPOINT_DC_HIGH_PIN, OUTPUT);
+#endif
+#if defined(SETPOINT_LOW_LIMIT)
+  digitalWrite(SETPOINT_DC_LOW_PIN, HIGH);
+  pinMode(SETPOINT_DC_LOW_PIN, OUTPUT);
+#endif
 
 } // end setup()
 
@@ -615,16 +619,19 @@ void loop() {
     // and the core data logging function is not impacted. But if an application does not use any
     // downstream processes, below is an example of calculating the temp from a TMP36.
     // Processing in this code allows the scaled values to be displayed on the connected LCD.
+    if (bitRead(bitwise_status, BWS_NO_DATA)) {
+      analogRead(pin); // dummy read to switch channel, recommended, needed on Due or first read is bad
+      delayMicroseconds(100); // wait for s/h
+    }
     if (pin == 0) { // stack a temp from 0 so atemp[pin] does not have gaps that require a bigger array
       // converting reading from voltage to temp F, for 3.3v arduino ioref = 3.3
-      //atemp[pin] = analogRead(pin); // dummy read to switch channel, recommended, but not clear if helps
-      //delayMicroseconds(100); // wait for s/h
+      
       atemp[pin] = analogRead(pin);
       SERIALP.print(atemp[pin]); // output raw value
       atemp[pin] *= ioref;
       SERIALP.print(", \"A");
       SERIALP.print(pin);
-      SERIALP.print("tempF\": ");
+      SERIALP.print("tempF\": "); // update if using C
       atemp[pin] /= 1023.0;
       atemp[pin] = (atemp[pin] - 0.5) * 100; // converting to C, 10 mv per degree C with 500 mV offset
       // SERIALP.print(atemp[pin]); this line will output C
@@ -659,7 +666,7 @@ void loop() {
     }
   }
 
-  if (1) {
+  if (!(bitwise_status & BWS_NO_RTC)) {
     SERIALP.print(", \"RTCTEMP\": ");
     SERIALP.print(rtc.getTemperature());
   }
@@ -789,8 +796,10 @@ void loop() {
   if ((atemp[0] > SETPOINT_HIGH_LIMIT) && (setpoint_restart_delay == 0)) {
     digitalWrite(SETPOINT_DC_HIGH_PIN, LOW); // active low reducing
   } else if (atemp[0] < SETPOINT_HIGH_LIMIT - SETPOINT_HIGH_HYSTERESIS) {
+    if (digitalRead(SETPOINT_DC_HIGH_PIN) == 0) {
+      setpoint_restart_delay = SETPOINT_RESTART_DELAY;
+    }
     digitalWrite(SETPOINT_DC_HIGH_PIN, HIGH); // turn off once hysteresis cleared
-    setpoint_restart_delay = SETPOINT_RESTART_DELAY;
   }
 #endif
 
@@ -798,8 +807,10 @@ void loop() {
   if ((atemp[0] < SETPOINT_LOW_LIMIT) && (setpoint_restart_delay == 0)) {
     digitalWrite(SETPOINT_DC_LOW_PIN, LOW); // active low raising
   } else if (atemp[0] > SETPOINT_LOW_LIMIT + SETPOINT_LOW_HYSTERESIS) {
+    if (digitalRead(SETPOINT_DC_LOW_PIN) == 0) {
+      setpoint_restart_delay = SETPOINT_RESTART_DELAY;
+    }
     digitalWrite(SETPOINT_DC_LOW_PIN, HIGH); // turn off once hysteresis cleared
-    setpoint_restart_delay = SETPOINT_RESTART_DELAY;
   }
 #endif
 
@@ -843,14 +854,14 @@ void loop() {
   }
 #endif
 
-  // add time frame rollover
-
   if (!(bitwise_status & BWS_NO_RTC)) {
     lastTimestamp = now.unixtime();
   }
 
   outputSerialNumber(1); // last so not using space early in the line, you can remove this if not sending data to cloud service
   SERIALP.println("}");
+
+  bitClear(bitwise_status, BWS_NO_DATA); // clear BWS_NO_DATA now that we have data
 
   digitalWrite(LED_BUILTIN, LOW); // start of waiting for next processing cycle
   delay_sec = 0;
