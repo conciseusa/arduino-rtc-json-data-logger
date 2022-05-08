@@ -1,4 +1,4 @@
-#define md5HASH "50ffc70ac4ce00558bed523892742f79"
+#define md5HASH "c2f905df5fc8b3dff5a455cd411b640b"
 
 // Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
 // A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
@@ -8,6 +8,7 @@
 // Pins used: D0, D1 for serial port, D5, D6 for sample speed, I2C port (depends on Arduino flavor)
 //            D7 push button as used in https://www.arduino.cc/en/tutorial/pushbutton, used to cut short long sleep times
 //            LED_BUILTIN - on when processing data (not sleeping)
+//            D8 default for raising, D9 default for reducing - setpoint control and/or duty cycle monitoring. Can be changed in defines below.
 // It is possible the code can be used unmodified in many applications.
 // But many applications will require some modification. Even so, having sample code to talk to all the components should speed things up.
 // It is a mix of code I wrote and example code I found
@@ -24,6 +25,26 @@
 // File->Preferences->Additional Boards Manager URLS (comma seperated) https://github.com/chipKIT32/chipKIT-core/raw/master/package_chipkit_index.json
 // Tools->Board->Board Manager  Scroll down to the chipKIT and install
 // On 64b Ubuntu - sudo apt-get install libc6-i386 - More details at http://chipkit.net/wiki/index.php?title=ChipKIT_core -> 64-Bit Linux
+
+// !! please read all the comments below if you plan on using the sepoint feature !!
+// !! if doing refrigeration control, there can be many issues to be aware of !!
+// !! SETPOINT_RESTART_DELAY and HYSTERESIS are trying to address the short cycle issue !!
+// !! this page mentions how a delay can solve the short cycle issue http://www.refrigerationbasics.com/RBIII/controls5.htm !!
+#define SETPOINT_HIGH_LIMIT 68 // trips at this value + hysteresis, comment out to turn off reducing, will still monitor duty cycle, if commented out, coment out alt setpoint
+#define SETPOINT_HIGH_HYSTERESIS 3 // hysteresis setup to go past setpoint (away from other setpoint) to reduce ringing when hysteresis and setpoint gap is small
+#define SETPOINT_DC_HIGH_PIN 9 // D pin for reducing
+#define DUTY_CYCLE_HIGH_DISABLE 0 // 1 = do not calculate or display duty cycle
+#define SETPOINT_LOW_LIMIT 67 // comment out to turn off raising, trips at this value - hysteresis
+#define SETPOINT_LOW_HYSTERESIS 1
+#define SETPOINT_DC_LOW_PIN 8 // D pin for raising
+#define DUTY_CYCLE_LOW_DISABLE 0 // 1 = do not calculate or display duty cycle
+#define SETPOINT_RESTART_DELAY 5 // cycles to wait until turning on raising/reducing after last phase ended, confirm cycle time is correct to prevent short cycling
+#define DUTY_CYCLE_FRAME_SAMPLES 100 // number of samples in a duty cycle calculation time frame, roll to next frame when full
+#define DUTY_CYCLE_FRAME_ROLLOVER .2 // the amount of the next frame to seed with the current duty cycle
+// alt setpoints, common use is setpoints to hold temp at about 70F for fermentation, alt setpoint to hold temp at 40F or below for refrigeration
+#define SETPOINT_HIGH_LIMIT_ALT 36 // do not define alt setpoints if regular setpoints not set, trips at this value + hysteresis
+#define SETPOINT_LOW_LIMIT_ALT 1 // trips at this value - hysteresis
+#define SETPOINT_ALT_PIN 10 // D pin for switching to alt setpoints
 
 // pre declare and reused ram to keep usage down
 float atemp[2]; // used for scaling TMP36 temperature sensor on A inputs
@@ -46,22 +67,11 @@ unsigned char duty_cycle_reducing = 0; // calculated duty cycle
 unsigned char duty_cycle_raising_count = 0; // samples in active state
 unsigned char duty_cycle_raising = 0;
 unsigned char duty_cycle_total_count = 0; // total samples in a time frame, ratio with active count gets duty cycle
-unsigned char setpoint_restart_delay = 0; // set to SETPOINT_RESTART_DELAY at turn off, 0 to reenable
+// seed with SETPOINT_RESTART_DELAY so restarted do not skip delay, set to SETPOINT_RESTART_DELAY at turn off, ticks down to 0 to reenable setpoint control
+unsigned char setpoint_restart_delay = SETPOINT_RESTART_DELAY + 1; // +1 to make up for the --count that happens before the first setpoint check
 byte bitwise_status = 0b01000000;
 #define BWS_NO_RTC 0b10000000
 #define BWS_NO_DATA 6 // suppress prev data until a read is made
-
-#define SETPOINT_HIGH_LIMIT 70 // comment out to turn off reducing, will still monitor duty cycle
-#define SETPOINT_HIGH_HYSTERESIS 1
-#define SETPOINT_DC_HIGH_PIN 9 // D pin for reducing
-#define DUTY_CYCLE_HIGH_DISABLE 0 // 1 = do not calculate or display duty cycle
-#define SETPOINT_LOW_LIMIT 68 // comment out to turn off raising
-#define SETPOINT_LOW_HYSTERESIS 1
-#define SETPOINT_DC_LOW_PIN 8 // D pin for raising
-#define DUTY_CYCLE_LOW_DISABLE 0
-#define SETPOINT_RESTART_DELAY 2 // cycles to wait until turning on raising/reducing after last phase ended
-#define DUTY_CYCLE_FRAME_SAMPLES 100 // number of samples in a time frame, roll to next when full
-#define DUTY_CYCLE_FRAME_ROLLOVER .2 // the amount of the next frame to seed with the current duty cycle
 
 #include "Wire.h"
 #define SERIALP Serial // different Arduino have variuos serial ports, so control which one we use
@@ -252,6 +262,33 @@ void jsonTimestamp() {
   timeStamp(13);
   SERIALP.print("\"");
 }
+
+// hysteresis setup to go past setpoint (away from other setpoint) to reduce ringing when hysteresis is small
+#if defined(SETPOINT_HIGH_LIMIT)
+void check_setpoint_high(int high_limit) {
+  if ((atemp[0] > high_limit + SETPOINT_HIGH_HYSTERESIS) && (setpoint_restart_delay == 0)) {
+    digitalWrite(SETPOINT_DC_HIGH_PIN, LOW); // active low reducing
+  } else if (atemp[0] < high_limit) {
+    if (digitalRead(SETPOINT_DC_HIGH_PIN) == 0) {
+      setpoint_restart_delay = SETPOINT_RESTART_DELAY;
+    }
+    digitalWrite(SETPOINT_DC_HIGH_PIN, HIGH); // turn off once hysteresis cleared
+  }
+}
+#endif
+
+#if defined(SETPOINT_LOW_LIMIT)
+void check_setpoint_low(int low_limit) {
+  if ((atemp[0] < low_limit - SETPOINT_LOW_HYSTERESIS) && (setpoint_restart_delay == 0)) {
+    digitalWrite(SETPOINT_DC_LOW_PIN, LOW); // active low raising
+  } else if (atemp[0] > low_limit) {
+    if (digitalRead(SETPOINT_DC_LOW_PIN) == 0) {
+      setpoint_restart_delay = SETPOINT_RESTART_DELAY;
+    }
+    digitalWrite(SETPOINT_DC_LOW_PIN, HIGH); // turn off once hysteresis cleared
+  }
+}
+#endif
 
 void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
   int count = 0;
@@ -619,15 +656,22 @@ void loop() {
     // and the core data logging function is not impacted. But if an application does not use any
     // downstream processes, below is an example of calculating the temp from a TMP36.
     // Processing in this code allows the scaled values to be displayed on the connected LCD.
-    if (bitRead(bitwise_status, BWS_NO_DATA)) {
-      analogRead(pin); // dummy read to switch channel, recommended, needed on Due or first read is bad
-      delayMicroseconds(100); // wait for s/h
-    }
-    if (pin == 0) { // stack a temp from 0 so atemp[pin] does not have gaps that require a bigger array
-      // converting reading from voltage to temp F, for 3.3v arduino ioref = 3.3
-      
-      atemp[pin] = analogRead(pin);
-      SERIALP.print(atemp[pin]); // output raw value
+    // if (bitRead(bitwise_status, BWS_NO_DATA)) { // code to only pre-read on first read
+    //  analogRead(pin); // dummy read to switch channel, recommended, needed on Due or first read is bad
+    //  delayMicroseconds(100); // wait for s/h
+    // }
+    analogRead(pin); // dummy read to switch channel, recommended, needed on Due or first read is bad
+    delayMicroseconds(100); // wait for s/h
+    if (pin == 0 || pin == 1) { // stack a temp from 0 so atemp[pin] does not have gaps that require a bigger array
+      // convert reading from raw a/d to voltage and temp F, for 3.3v arduino ioref = 3.3
+      temp_int = atemp[pin] = analogRead(pin);
+      SERIALP.print(temp_int); // output raw value
+      temp_float = temp_int;
+      temp_float /= 205;
+      SERIALP.print(", \"A");
+      SERIALP.print(pin);
+      SERIALP.print("volt\": "); // output voltage
+      SERIALP.print(temp_float);
       atemp[pin] *= ioref;
       SERIALP.print(", \"A");
       SERIALP.print(pin);
@@ -637,7 +681,7 @@ void loop() {
       // SERIALP.print(atemp[pin]); this line will output C
       atemp[pin] = (atemp[pin] * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
       SERIALP.print(atemp[pin]); // output tempF
-    } else if (pin == 1 || pin == 2) { // 5V FS no input voltage divider on 5V ioref
+    } else if (pin == 2) { // 5V FS no input voltage divider on 5V ioref
       temp_int = analogRead(pin);
       SERIALP.print(temp_int); // output raw value
       temp_float = temp_int;
@@ -767,16 +811,6 @@ void loop() {
     lcd.print(yltemp, 1);
   }
 
-  if (Serial.available() > 0) {
-    // for testing serial rx, or as an example of how to rx and display serial data
-    lcd.setCursor(19, 3); // bottom right coner
-    char rec_char;
-    rec_char = Serial.read();
-    if (rec_char != 10) {
-      lcd.print((char) rec_char);
-    }
-  }
-
   if (lastTimestamp == 0) {
     lastTimestamp = now.unixtime(); // so first loop does not create a huge elapsedTimestamp
   }
@@ -786,31 +820,48 @@ void loop() {
     elapsedTimestamp = 0;
   }
 
+// use bottom right coner for monitoring setpoint_restart_delay or serial rx
 #if defined(SETPOINT_HIGH_LIMIT) || defined(SETPOINT_LOW_LIMIT)
+  lcd.setCursor(19, 3); // bottom right coner
   if (setpoint_restart_delay > 0) {
     setpoint_restart_delay--;
+    lcd.print(setpoint_restart_delay);
+  } else {
+    lcd.print(' ');
+  }
+#else
+  if (Serial.available() > 0) {
+    // for testing serial rx, or as an example of how to rx and display serial data
+    lcd.setCursor(19, 3); // bottom right coner
+    char rec_char;
+    rec_char = Serial.read();
+    if (rec_char != 10) {
+      lcd.print((char) rec_char);
+    }
   }
 #endif
 
 #if defined(SETPOINT_HIGH_LIMIT)
-  if ((atemp[0] > SETPOINT_HIGH_LIMIT) && (setpoint_restart_delay == 0)) {
-    digitalWrite(SETPOINT_DC_HIGH_PIN, LOW); // active low reducing
-  } else if (atemp[0] < SETPOINT_HIGH_LIMIT - SETPOINT_HIGH_HYSTERESIS) {
-    if (digitalRead(SETPOINT_DC_HIGH_PIN) == 0) {
-      setpoint_restart_delay = SETPOINT_RESTART_DELAY;
-    }
-    digitalWrite(SETPOINT_DC_HIGH_PIN, HIGH); // turn off once hysteresis cleared
+  if (digitalRead(SETPOINT_ALT_PIN) != 0) {
+    check_setpoint_high(SETPOINT_HIGH_LIMIT);
   }
 #endif
 
 #if defined(SETPOINT_LOW_LIMIT)
-  if ((atemp[0] < SETPOINT_LOW_LIMIT) && (setpoint_restart_delay == 0)) {
-    digitalWrite(SETPOINT_DC_LOW_PIN, LOW); // active low raising
-  } else if (atemp[0] > SETPOINT_LOW_LIMIT + SETPOINT_LOW_HYSTERESIS) {
-    if (digitalRead(SETPOINT_DC_LOW_PIN) == 0) {
-      setpoint_restart_delay = SETPOINT_RESTART_DELAY;
-    }
-    digitalWrite(SETPOINT_DC_LOW_PIN, HIGH); // turn off once hysteresis cleared
+  if (digitalRead(SETPOINT_ALT_PIN) != 0) {
+    check_setpoint_low(SETPOINT_LOW_LIMIT);
+  }
+#endif
+
+#if defined(SETPOINT_HIGH_LIMIT_ALT)
+  if (digitalRead(SETPOINT_ALT_PIN) == 0) {
+    check_setpoint_high(SETPOINT_HIGH_LIMIT_ALT);
+  }
+#endif
+
+#if defined(SETPOINT_LOW_LIMIT_ALT)
+  if (digitalRead(SETPOINT_ALT_PIN) == 0) {
+    check_setpoint_low(SETPOINT_LOW_LIMIT_ALT);
   }
 #endif
 
