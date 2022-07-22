@@ -1,4 +1,4 @@
-#define md5HASH "c2f905df5fc8b3dff5a455cd411b640b"
+#define md5HASH "c6ed0d86b164a788134ca363785a4873"
 
 // Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
 // A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
@@ -30,14 +30,14 @@
 // !! if doing refrigeration control, there can be many issues to be aware of !!
 // !! SETPOINT_RESTART_DELAY and HYSTERESIS are trying to address the short cycle issue !!
 // !! this page mentions how a delay can solve the short cycle issue http://www.refrigerationbasics.com/RBIII/controls5.htm !!
-#define SETPOINT_HIGH_LIMIT 68 // trips at this value + hysteresis, comment out to turn off reducing, will still monitor duty cycle, if commented out, coment out alt setpoint
+//#define SETPOINT_HIGH_LIMIT 68 // trips at this value + hysteresis, comment out to turn off reducing, will still monitor duty cycle, if commented out, coment out alt setpoint
 #define SETPOINT_HIGH_HYSTERESIS 3 // hysteresis setup to go past setpoint (away from other setpoint) to reduce ringing when hysteresis and setpoint gap is small
 #define SETPOINT_DC_HIGH_PIN 9 // D pin for reducing
-#define DUTY_CYCLE_HIGH_DISABLE 0 // 1 = do not calculate or display duty cycle
-#define SETPOINT_LOW_LIMIT 67 // comment out to turn off raising, trips at this value - hysteresis
+#define DUTY_CYCLE_HIGH_DISABLE 1 // 1 = do not calculate or display duty cycle
+//#define SETPOINT_LOW_LIMIT 67 // comment out to turn off raising, trips at this value - hysteresis
 #define SETPOINT_LOW_HYSTERESIS 1
 #define SETPOINT_DC_LOW_PIN 8 // D pin for raising
-#define DUTY_CYCLE_LOW_DISABLE 0 // 1 = do not calculate or display duty cycle
+#define DUTY_CYCLE_LOW_DISABLE 1 // 1 = do not calculate or display duty cycle
 #define SETPOINT_RESTART_DELAY 5 // cycles to wait until turning on raising/reducing after last phase ended, confirm cycle time is correct to prevent short cycling
 #define DUTY_CYCLE_FRAME_SAMPLES 100 // number of samples in a duty cycle calculation time frame, roll to next frame when full
 #define DUTY_CYCLE_FRAME_ROLLOVER .2 // the amount of the next frame to seed with the current duty cycle
@@ -56,7 +56,7 @@ float thtemp = -999; // today high temperature set so any normal reading above
 float tltemp = 999; // today low temperature set so any normal reading below
 float yhtemp = -999; // yesterday high
 float yltemp = 999; // yesterday low
-float volt3; // used for scaling voltage on A3
+float volt_display; // used for scaling voltage
 float temp_float; // temporary float
 int temp_int; // temporary int
 unsigned int delay_sec = 0; // to track the delay between samples with out RTC
@@ -442,7 +442,7 @@ void setup() {
   // output compile time / version info so can see in the field
   // Used info on http://forum.arduino.cc/index.php?topic=158014.0
   SERIALP.print(", \"Compiled\": \"" __DATE__ ", " __TIME__ ", " __VERSION__ "\"");
-  SERIALP.print(", \"arduinoVariant\": \""arduinoVariant"\"");
+  SERIALP.print(", \"arduinoVariant\": \"" arduinoVariant "\"");
   SERIALP.println("}");
 
   // lcd.init(); // LiquidCrystal_I2C
@@ -639,7 +639,7 @@ void loop() {
   lcd.print(' ');
 #else 
   lcd.print(" V");
-  lcd.print(volt3, 1); // show battery, or what is on volt3
+  lcd.print(volt_display, 1); // show battery, or what is in volt_display
 #endif
 
   if (!(bitwise_status & BWS_NO_RTC)) {
@@ -662,8 +662,9 @@ void loop() {
     // }
     analogRead(pin); // dummy read to switch channel, recommended, needed on Due or first read is bad
     delayMicroseconds(100); // wait for s/h
-    if (pin == 0 || pin == 1) { // stack a temp from 0 so atemp[pin] does not have gaps that require a bigger array
-      // convert reading from raw a/d to voltage and temp F, for 3.3v arduino ioref = 3.3
+    if (pin == 0) { // || pin == 1
+      // convert reading from raw a/d to voltage and temp F or temp C, for 3.3v arduino ioref = 3.3
+      // fill atemp from 0 so atemp[pin] does not have gaps that require a bigger array
       temp_int = atemp[pin] = analogRead(pin);
       SERIALP.print(temp_int); // output raw value
       temp_float = temp_int;
@@ -681,7 +682,7 @@ void loop() {
       // SERIALP.print(atemp[pin]); this line will output C
       atemp[pin] = (atemp[pin] * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
       SERIALP.print(atemp[pin]); // output tempF
-    } else if (pin == 2) { // 5V FS no input voltage divider on 5V ioref
+    } else if (pin == 200) { // 5V FS no input voltage divider on 5V ioref
       temp_int = analogRead(pin);
       SERIALP.print(temp_int); // output raw value
       temp_float = temp_int;
@@ -690,7 +691,7 @@ void loop() {
       SERIALP.print(pin);
       SERIALP.print("volt\": ");
       SERIALP.print(temp_float);
-    } else if (pin == 3 || pin == 4 || pin == 5 || pin == 6 || pin == 7) { // 40.75V FS input 71.5K/10K on 5V ioref
+    } else if (pin == 1 || pin == 2 || pin == 3 || pin == 4 || pin == 5 || pin == 6 || pin == 7) { // 40.75V FS input 71.5K/10K on 5V ioref
       temp_int = analogRead(pin);
       SERIALP.print(temp_int); // output raw value
       temp_float = temp_int<<2;
@@ -699,8 +700,8 @@ void loop() {
       SERIALP.print(pin);
       SERIALP.print("volt\": ");
       SERIALP.print(temp_float);
-      if (pin == 3) {
-        volt3 = temp_float;
+      if (pin == 1) {
+        volt_display = temp_float; // volt to show in LCD if duty cycle calc turned off
       }
     } else {
       SERIALP.print(analogRead(pin)); // if no special treatment, send raw value
@@ -760,7 +761,7 @@ void loop() {
   lcd.print(' ');
 #else
   lcd.print(" V");
-  lcd.print(volt3, 1); // show battery, or what is on volt3
+  lcd.print(volt_display, 1); // show battery, or what is in volt_display
 #endif
 
   // check if we have new high or lows
@@ -853,13 +854,13 @@ void loop() {
   }
 #endif
 
-#if defined(SETPOINT_HIGH_LIMIT_ALT)
+#if defined(SETPOINT_HIGH_LIMIT_ALT) && defined(SETPOINT_HIGH_LIMIT) // non alt must be used to trun alt setpoint
   if (digitalRead(SETPOINT_ALT_PIN) == 0) {
     check_setpoint_high(SETPOINT_HIGH_LIMIT_ALT);
   }
 #endif
 
-#if defined(SETPOINT_LOW_LIMIT_ALT)
+#if defined(SETPOINT_LOW_LIMIT_ALT) && defined(SETPOINT_LOW_LIMIT) // non alt must be used to trun alt setpoint
   if (digitalRead(SETPOINT_ALT_PIN) == 0) {
     check_setpoint_low(SETPOINT_LOW_LIMIT_ALT);
   }
