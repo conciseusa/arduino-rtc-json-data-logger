@@ -5,3 +5,5 @@ This is the code/sketch to load on the board a
 has been mounted to.
 
 Even if you don't have the shield, you can add a RTC and an LCD to an Arduino and make you own data logger.
+
+`git clone https://github.com/conciseusa/arduino-rtc-json-data-logger.git`
