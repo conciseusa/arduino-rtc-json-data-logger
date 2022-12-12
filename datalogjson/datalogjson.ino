@@ -11,6 +11,9 @@
 //            D8 default for raising, D9 default for reducing - setpoint control and/or duty cycle monitoring. Can be changed in defines below.
 // It is possible the code can be used unmodified in many applications.
 // But many applications will require some modification. Even so, having sample code to talk to all the components should speed things up.
+// Requires libraries to drive the LCD, real time clock, etc.
+// Try to complile and missing libraries will cause errors. Look at #include lines to see libraries used.
+
 // It is a mix of code I wrote and example code I found
 // Mashup by Walter Spurgiasz 2020
 // Code inspired from:
@@ -32,11 +35,11 @@
 // !! this page mentions how a delay can solve the short cycle issue http://www.refrigerationbasics.com/RBIII/controls5.htm !!
 //#define SETPOINT_HIGH_LIMIT 68 // trips at this value + hysteresis, comment out to turn off reducing, will still monitor duty cycle, if commented out, coment out alt setpoint
 #define SETPOINT_HIGH_HYSTERESIS 3 // hysteresis setup to go past setpoint (away from other setpoint) to reduce ringing when hysteresis and setpoint gap is small
-#define SETPOINT_DC_HIGH_PIN 9 // D pin for reducing
+#define SETPOINT_DC_HIGH_PIN 9 // D pin for reducing. Output if using setpoint control, or input if monitoring duty cycle.
 #define DUTY_CYCLE_HIGH_DISABLE 1 // 1 = do not calculate or display duty cycle
 //#define SETPOINT_LOW_LIMIT 67 // comment out to turn off raising, trips at this value - hysteresis
 #define SETPOINT_LOW_HYSTERESIS 1
-#define SETPOINT_DC_LOW_PIN 8 // D pin for raising
+#define SETPOINT_DC_LOW_PIN 8 // D pin for raising. Output if using setpoint control, or input if monitoring duty cycle.
 #define DUTY_CYCLE_LOW_DISABLE 1 // 1 = do not calculate or display duty cycle
 #define SETPOINT_RESTART_DELAY 5 // cycles to wait until turning on raising/reducing after last phase ended, confirm cycle time is correct to prevent short cycling
 #define DUTY_CYCLE_FRAME_SAMPLES 100 // number of samples in a duty cycle calculation time frame, roll to next frame when full
@@ -388,38 +391,7 @@ void setup() {
 
   Wire.begin(); // seems we do not need this, things seem to work the same if called or not called
 
-#if 1 // i2c_scanner can be handyfor troubleshooting - https://playground.arduino.cc/Main/I2cScanner/
-  byte error, address;
-  int nDevices;
- 
-  SERIALP.println("Scanning...");
- 
-  nDevices = 0;
-  for(address = 1; address < 127; address++ ) {
-    // i2c_scanner uses the return value of Write.endTransmisstion to see if a device acknowledged the address.
-    Wire.beginTransmission(address);
-    error = Wire.endTransmission();
- 
-    if (error == 0) {
-      SERIALP.print("I2C device found at address 0x");
-      if (address<16)
-        SERIALP.print("0");
-      SERIALP.print(address,HEX);
-      SERIALP.println("  !");
- 
-      nDevices++;
-    } else if (error==4) {
-      SERIALP.print("Unknown error at address 0x");
-      if (address<16)
-        SERIALP.print("0");
-      SERIALP.println(address,HEX);
-    }    
-  }
-  if (nDevices == 0) 
-    SERIALP.println("No I2C devices found\n");
-  else
-    SERIALP.println("Scan done\n");
-#endif // i2c_scanner
+
 
   // for some reason if the rtc begin is done after the lcd init, the rtc begin fails
   if (! rtc.begin()) {
@@ -454,6 +426,66 @@ void setup() {
     // begin() failed so blink error code using the onboard LED if possible
     // hd44780::fatalError(status); // does not return, uncomment if needed to troubleshoot LCD
   }
+
+#if 1 // i2c_scanner can be handyfor troubleshooting - https://playground.arduino.cc/Main/I2cScanner/
+  // device scan done one time so did not put in a function
+  byte error, address;
+  int nDevices;
+ 
+  SERIALP.print("{\"I2C devices\": \"");
+  lcd.setCursor(0, 0);
+  lcd.print("I2C devices:");
+  lcd.setCursor(0, 1);
+ 
+  nDevices = 0;
+  for(address = 1; address < 127; address++ ) {
+    // i2c_scanner uses the return value of Write.endTransmisstion to see if a device acknowledged the address.
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission();
+
+    if (error == 0) {
+      if (nDevices>0) {
+        SERIALP.print(", ");
+        lcd.print(" ");
+      }
+      SERIALP.print("0x");
+      if (address<16) {
+        SERIALP.print("0");
+        lcd.print("0");
+      }
+      SERIALP.print(address,HEX);
+      lcd.print(address,HEX);
+      nDevices++;
+    } else if (error==4) {
+      if (nDevices>0) {
+        SERIALP.print(", ");
+        lcd.print(" ");
+      }
+      SERIALP.print("Unknown error at address 0x");
+      lcd.print("Error@ ");
+      if (address<16) {
+        SERIALP.print("0");
+        lcd.print("0");
+      }
+      SERIALP.print(address,HEX);
+      lcd.print(address,HEX);
+    }
+    if (nDevices==6) {
+      lcd.setCursor(0, 2);
+    }
+    if (nDevices==12) {
+      lcd.setCursor(0, 3);
+    }
+  }
+  lcd.setCursor(15, 3);
+  lcd.print("#:");
+  lcd.print(nDevices);
+  SERIALP.print("\", \"Number I2C devices\": ");
+  SERIALP.print(nDevices);
+  SERIALP.println("}");
+  delay(3000);
+#endif // i2c_scanner
+
   lcd.setCursor(0, 0); // Set the cursor on the first column and first row. X, Y
 
 #if 0
