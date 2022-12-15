@@ -1,4 +1,4 @@
-#define md5HASH "c6ed0d86b164a788134ca363785a4873"
+#define md5HASH "326571d55586fdcf518d61b040d33404"
 
 // Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
 // A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
@@ -35,11 +35,15 @@
 // !! this page mentions how a delay can solve the short cycle issue http://www.refrigerationbasics.com/RBIII/controls5.htm !!
 //#define SETPOINT_HIGH_LIMIT 68 // trips at this value + hysteresis, comment out to turn off reducing, will still monitor duty cycle, if commented out, coment out alt setpoint
 #define SETPOINT_HIGH_HYSTERESIS 3 // hysteresis setup to go past setpoint (away from other setpoint) to reduce ringing when hysteresis and setpoint gap is small
-#define SETPOINT_DC_HIGH_PIN 9 // D pin for reducing. Output if using setpoint control, or input if monitoring duty cycle.
-#define DUTY_CYCLE_HIGH_DISABLE 1 // 1 = do not calculate or display duty cycle
+#define SETPOINT_DC_HIGH_PIN 3 // A or D pin for reducing. Output if using setpoint control, or input if monitoring duty cycle.
+#define DUTY_CYCLE_HIGH_SIGNAL A // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
+#define DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD 125 // D input: 1 active high, 0 active low. A input: + or - #, 200 = active if above 200, -200 = active if below 200
+#define DUTY_CYCLE_HIGH_DISABLE 0 // 1 = do not calculate or display duty cycle
 //#define SETPOINT_LOW_LIMIT 67 // comment out to turn off raising, trips at this value - hysteresis
 #define SETPOINT_LOW_HYSTERESIS 1
-#define SETPOINT_DC_LOW_PIN 8 // D pin for raising. Output if using setpoint control, or input if monitoring duty cycle.
+#define SETPOINT_DC_LOW_PIN 8 // A or D pin for raising. Output if using setpoint control, or input if monitoring duty cycle.
+#define DUTY_CYCLE_LOW_SIGNAL D // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
+#define DUTY_CYCLE_LOW_SIGNAL_THRESHOLD 0 // D input: 1 active high, 0 active low. A input: + or - #, 200 = active if above 200, -200 = active if below 200
 #define DUTY_CYCLE_LOW_DISABLE 1 // 1 = do not calculate or display duty cycle
 #define SETPOINT_RESTART_DELAY 5 // cycles to wait until turning on raising/reducing after last phase ended, confirm cycle time is correct to prevent short cycling
 #define DUTY_CYCLE_FRAME_SAMPLES 100 // number of samples in a duty cycle calculation time frame, roll to next frame when full
@@ -50,7 +54,7 @@
 #define SETPOINT_ALT_PIN 10 // D pin for switching to alt setpoints
 
 // pre declare and reused ram to keep usage down
-float atemp[2]; // used for scaling TMP36 temperature sensor on A inputs
+float atemp[3]; // used for scaling TMP36 temperature sensor on A inputs, each float uses 4 bytes
 char thour = 99; // save temp time
 char tmin = 99;
 char tsec = 99;
@@ -266,29 +270,31 @@ void jsonTimestamp() {
   SERIALP.print("\"");
 }
 
+// setpoint control currently only implemented for digital pins
 // hysteresis setup to go past setpoint (away from other setpoint) to reduce ringing when hysteresis is small
-#if defined(SETPOINT_HIGH_LIMIT)
+// DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD has multiple uses: analog input threshold, digital input and output active state
+#if defined(SETPOINT_HIGH_LIMIT) && DUTY_CYCLE_HIGH_SIGNAL == 'D'
 void check_setpoint_high(int high_limit) {
   if ((atemp[0] > high_limit + SETPOINT_HIGH_HYSTERESIS) && (setpoint_restart_delay == 0)) {
-    digitalWrite(SETPOINT_DC_HIGH_PIN, LOW); // active low reducing
+    digitalWrite(SETPOINT_DC_HIGH_PIN, DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD); // turn on reducing
   } else if (atemp[0] < high_limit) {
-    if (digitalRead(SETPOINT_DC_HIGH_PIN) == 0) {
+    if (digitalRead(SETPOINT_DC_HIGH_PIN) == DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD) {
       setpoint_restart_delay = SETPOINT_RESTART_DELAY;
     }
-    digitalWrite(SETPOINT_DC_HIGH_PIN, HIGH); // turn off once hysteresis cleared
+    digitalWrite(SETPOINT_DC_HIGH_PIN, DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD ^ 1); // turn off once hysteresis cleared
   }
 }
 #endif
 
-#if defined(SETPOINT_LOW_LIMIT)
+#if defined(SETPOINT_LOW_LIMIT) && DUTY_CYCLE_LOW_SIGNAL == 'D'
 void check_setpoint_low(int low_limit) {
   if ((atemp[0] < low_limit - SETPOINT_LOW_HYSTERESIS) && (setpoint_restart_delay == 0)) {
-    digitalWrite(SETPOINT_DC_LOW_PIN, LOW); // active low raising
+    digitalWrite(SETPOINT_DC_LOW_PIN, DUTY_CYCLE_LOW_SIGNAL_THRESHOLD); // turn on raising
   } else if (atemp[0] > low_limit) {
-    if (digitalRead(SETPOINT_DC_LOW_PIN) == 0) {
+    if (digitalRead(SETPOINT_DC_LOW_PIN) == DUTY_CYCLE_LOW_SIGNAL_THRESHOLD) {
       setpoint_restart_delay = SETPOINT_RESTART_DELAY;
     }
-    digitalWrite(SETPOINT_DC_LOW_PIN, HIGH); // turn off once hysteresis cleared
+    digitalWrite(SETPOINT_DC_LOW_PIN, DUTY_CYCLE_LOW_SIGNAL_THRESHOLD ^ 1); // turn off once hysteresis cleared
   }
 }
 #endif
@@ -390,8 +396,6 @@ void setup() {
   // SERIALP.print("Test Serial first."); // use to test serial port before anything else jams things up
 
   Wire.begin(); // seems we do not need this, things seem to work the same if called or not called
-
-
 
   // for some reason if the rtc begin is done after the lcd init, the rtc begin fails
   if (! rtc.begin()) {
@@ -573,7 +577,7 @@ void setup() {
   clearLCDline(3);
 #endif
 
-  pinMode(7, INPUT_PULLUP);
+  pinMode(7, INPUT_PULLUP); // pushbutton on GenuLog shield
   lcd.print("Serial #: ");
   lcd.setCursor(0, 1);
   outputSerialNumber(2);
@@ -617,12 +621,12 @@ void setup() {
   pinMode(13, OUTPUT);  // LED
 
   // setup for setpoint
-#if defined(SETPOINT_HIGH_LIMIT)
-  digitalWrite(SETPOINT_DC_HIGH_PIN, HIGH);
+#if defined(SETPOINT_HIGH_LIMIT) && DUTY_CYCLE_HIGH_SIGNAL == 'D'
+  digitalWrite(SETPOINT_DC_HIGH_PIN, DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD ^ 1);
   pinMode(SETPOINT_DC_HIGH_PIN, OUTPUT);
 #endif
-#if defined(SETPOINT_LOW_LIMIT)
-  digitalWrite(SETPOINT_DC_LOW_PIN, HIGH);
+#if defined(SETPOINT_LOW_LIMIT) && DUTY_CYCLE_LOW_SIGNAL == 'D'
+  digitalWrite(SETPOINT_DC_LOW_PIN, DUTY_CYCLE_LOW_SIGNAL_THRESHOLD ^ 1);
   pinMode(SETPOINT_DC_LOW_PIN, OUTPUT);
 #endif
 
@@ -694,7 +698,7 @@ void loop() {
     // }
     analogRead(pin); // dummy read to switch channel, recommended, needed on Due or first read is bad
     delayMicroseconds(100); // wait for s/h
-    if (pin == 0) { // || pin == 1
+    if (pin == 0 || pin == 1 || pin == 2) { // || pin == 1
       // convert reading from raw a/d to voltage and temp F or temp C, for 3.3v arduino ioref = 3.3
       // fill atemp from 0 so atemp[pin] does not have gaps that require a bigger array
       temp_int = atemp[pin] = analogRead(pin);
@@ -767,6 +771,10 @@ void loop() {
 #if DUTY_CYCLE_HIGH_DISABLE == 0
   SERIALP.print(", \"duty_cycle_reducing\": ");
   SERIALP.print(duty_cycle_reducing);
+#endif
+#if DUTY_CYCLE_LOW_DISABLE == 0 || DUTY_CYCLE_HIGH_DISABLE == 0
+  SERIALP.print(", \"duty_cycle_total_count\": ");
+  SERIALP.print(duty_cycle_total_count);
 #endif
 
   // if new day reset high and low trackers, do after data set
@@ -903,28 +911,48 @@ void loop() {
 #endif
 
 #if DUTY_CYCLE_LOW_DISABLE == 0
-  if (digitalRead(SETPOINT_DC_LOW_PIN) == 0) {
+#if DUTY_CYCLE_LOW_SIGNAL == 'D'
+  if (digitalRead(SETPOINT_DC_LOW_PIN) == DUTY_CYCLE_LOW_SIGNAL_THRESHOLD) {
     duty_cycle_raising_count++;
   }
+#else
+  if ((DUTY_CYCLE_LOW_SIGNAL_THRESHOLD >= 0) && (analogRead(SETPOINT_DC_LOW_PIN) >= DUTY_CYCLE_LOW_SIGNAL_THRESHOLD)) {
+    duty_cycle_raising_count++;
+  } else if ((DUTY_CYCLE_LOW_SIGNAL_THRESHOLD < 0) && (analogRead(SETPOINT_DC_LOW_PIN) <= DUTY_CYCLE_LOW_SIGNAL_THRESHOLD)) {
+    duty_cycle_raising_count++;
+  }
+#endif
   temp_int = duty_cycle_raising_count;
   temp_int *= 100;
   duty_cycle_raising = temp_int / duty_cycle_total_count;
 #endif
 
 #if DUTY_CYCLE_HIGH_DISABLE == 0
-  if (digitalRead(SETPOINT_DC_HIGH_PIN) == 0) {
+#if DUTY_CYCLE_HIGH_SIGNAL == 'D'
+  if (digitalRead(SETPOINT_DC_HIGH_PIN) == DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD) {
     duty_cycle_reducing_count++;
   }
+#else
+  if ((DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD >= 0) && (analogRead(SETPOINT_DC_HIGH_PIN) >= DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD)) {
+    duty_cycle_reducing_count++;
+  } else if ((DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD < 0) && (analogRead(SETPOINT_DC_HIGH_PIN) <= DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD)) {
+    duty_cycle_reducing_count++;
+  }
+#endif
   temp_int = duty_cycle_reducing_count;
   temp_int *= 100;
   duty_cycle_reducing = temp_int / duty_cycle_total_count;
 #endif
 
 #if DUTY_CYCLE_LOW_DISABLE == 0 || DUTY_CYCLE_HIGH_DISABLE == 0
-  SERIALP.print(", \"duty_cycle_raising_count.duty_cycle_total_count\": ");
+#if DUTY_CYCLE_HIGH_DISABLE == 0
+  SERIALP.print(", \"duty_cycle_reducing_count\": "); // useful for troubleshooting
+  SERIALP.print(duty_cycle_reducing_count);
+#endif
+#if DUTY_CYCLE_LOW_DISABLE == 0
+  SERIALP.print(", \"duty_cycle_raising_count\": "); // useful for troubleshooting
   SERIALP.print(duty_cycle_raising_count);
-  SERIALP.print(".");
-  SERIALP.print(duty_cycle_total_count);
+#endif
   if (duty_cycle_total_count >= DUTY_CYCLE_FRAME_SAMPLES) { // rollover so old samples fade
     SERIALP.print(", \"duty_cycle_frame_rollover\": ");
     SERIALP.print(DUTY_CYCLE_FRAME_SAMPLES);
@@ -942,6 +970,7 @@ void loop() {
     lastTimestamp = now.unixtime();
   }
 
+  SERIALP.print(", ");
   outputSerialNumber(1); // last so not using space early in the line, you can remove this if not sending data to cloud service
   SERIALP.println("}");
 
