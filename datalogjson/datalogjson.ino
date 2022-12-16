@@ -1,4 +1,4 @@
-#define md5HASH "326571d55586fdcf518d61b040d33404"
+#define md5HASH "35fe4870ed8fee91a4c84e462afb49af"
 
 // Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
 // A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
@@ -307,7 +307,7 @@ void outputSerialNumber(byte output) { // output to serial = 1, to lcd = 2
   Wire.write(0x80); // dummy write to set register pointer to 80h start of 128-bit (16 bytes) serial #
   if(count = Wire.endTransmission()) { // reuse count to save ram, 0 = success
     if (output == 1) {
-      SERIALP.print("\"SerialNumber\": \"Error: "); // "SerialNumber": "FFFFFFFFFFFFFFFF"
+      SERIALP.print(", \"SerialNumber\": \"Error: "); // "SerialNumber": "FFFFFFFFFFFFFFFF"
       SERIALP.print(count); // https://www.arduino.cc/en/Reference/WireEndTransmission for error codes
       SERIALP.print("\"");
     } else {
@@ -970,7 +970,6 @@ void loop() {
     lastTimestamp = now.unixtime();
   }
 
-  SERIALP.print(", ");
   outputSerialNumber(1); // last so not using space early in the line, you can remove this if not sending data to cloud service
   SERIALP.println("}");
 
