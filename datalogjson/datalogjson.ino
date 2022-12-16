@@ -1,5 +1,9 @@
 #define md5HASH "35fe4870ed8fee91a4c84e462afb49af"
 
+// md5HASH used to know the version that is the basis for the runnig code.
+// In many cases the defines down below, and sometimes some code, will be modified after checking out this file,
+// so the hash of this file will differ from what is in git, but md5HASH will allow linking back to the original.
+
 // Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
 // A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
 // This approach was taken because the system will be used with batter/solar power.
@@ -46,7 +50,7 @@
 #define DUTY_CYCLE_LOW_SIGNAL_THRESHOLD 0 // D input: 1 active high, 0 active low. A input: + or - #, 200 = active if above 200, -200 = active if below 200
 #define DUTY_CYCLE_LOW_DISABLE 1 // 1 = do not calculate or display duty cycle
 #define SETPOINT_RESTART_DELAY 5 // cycles to wait until turning on raising/reducing after last phase ended, confirm cycle time is correct to prevent short cycling
-#define DUTY_CYCLE_FRAME_SAMPLES 100 // number of samples in a duty cycle calculation time frame, roll to next frame when full
+#define DUTY_CYCLE_FRAME_SAMPLES 200 // number of samples in a duty cycle calculation time frame, roll to next frame when full
 #define DUTY_CYCLE_FRAME_ROLLOVER .2 // the amount of the next frame to seed with the current duty cycle
 // alt setpoints, common use is setpoints to hold temp at about 70F for fermentation, alt setpoint to hold temp at 40F or below for refrigeration
 #define SETPOINT_HIGH_LIMIT_ALT 36 // do not define alt setpoints if regular setpoints not set, trips at this value + hysteresis
