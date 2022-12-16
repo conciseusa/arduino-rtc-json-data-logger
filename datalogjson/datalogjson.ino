@@ -1,4 +1,4 @@
-#define md5HASH "35fe4870ed8fee91a4c84e462afb49af"
+#define md5HASH "df2106428ac88db643c46c6e306d1aa9"
 
 // md5HASH used to know the version that is the basis for the runnig code.
 // In many cases the defines down below, and sometimes some code, will be modified after checking out this file,
