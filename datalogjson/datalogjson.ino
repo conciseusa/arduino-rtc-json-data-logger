@@ -1,4 +1,4 @@
-#define md5HASH "df2106428ac88db643c46c6e306d1aa9"
+#define md5HASH "89d4d992aff758ae1a832b4ed65ef813"
 
 // md5HASH used to know the version that is the basis for the runnig code.
 // In many cases the defines down below, and sometimes some code, will be modified after checking out this file,
@@ -958,8 +958,8 @@ void loop() {
   SERIALP.print(duty_cycle_raising_count);
 #endif
   if (duty_cycle_total_count >= DUTY_CYCLE_FRAME_SAMPLES) { // rollover so old samples fade
-    SERIALP.print(", \"duty_cycle_frame_rollover\": ");
-    SERIALP.print(DUTY_CYCLE_FRAME_SAMPLES);
+    // SERIALP.print(", \"duty_cycle_frame_rollover\": "); // messes up csv files, so only use if needed for troubleshooting
+    // SERIALP.print(DUTY_CYCLE_FRAME_SAMPLES);
     duty_cycle_total_count = DUTY_CYCLE_FRAME_ROLLOVER * DUTY_CYCLE_FRAME_SAMPLES;
 #if DUTY_CYCLE_LOW_DISABLE == 0
     duty_cycle_raising_count = DUTY_CYCLE_FRAME_ROLLOVER * duty_cycle_raising_count;
