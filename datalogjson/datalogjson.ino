@@ -1,8 +1,13 @@
-#define md5HASH "89d4d992aff758ae1a832b4ed65ef813"
+#define md5HASH "1647c8999c78169e25e2b48edbc2cd5b"
+#define md5TIME "2022-12-27-20-42-18"
 
-// md5HASH used to know the version that is the basis for the runnig code.
+// md5HASH used to know the version that is the basis for the running code.
 // In many cases the defines down below, and sometimes some code, will be modified after checking out this file,
 // so the hash of this file will differ from what is in git, but md5HASH will allow linking back to the original.
+// At startup, the the md5HASH will be output on the LCD and the serial data feed.
+// The values of the defines below will be output in the serial data feed.
+// And there is a code change message in the defines below that can be set if the code was changed after checkout.
+// With this structure in place, it should be possible to recreate a running system by looking at the startup data.
 
 // Script to read A & D pins, timestamp the data, and send out the serial port in a json packet
 // A serial logger (OpenLog) can be used to record the data, or a RPi can be used as a gateway to the internet
@@ -40,13 +45,13 @@
 //#define SETPOINT_HIGH_LIMIT 68 // trips at this value + hysteresis, comment out to turn off reducing, will still monitor duty cycle, if commented out, coment out alt setpoint
 #define SETPOINT_HIGH_HYSTERESIS 3 // hysteresis setup to go past setpoint (away from other setpoint) to reduce ringing when hysteresis and setpoint gap is small
 #define SETPOINT_DC_HIGH_PIN 3 // A or D pin for reducing. Output if using setpoint control, or input if monitoring duty cycle.
-#define DUTY_CYCLE_HIGH_SIGNAL A // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
+#define DUTY_CYCLE_HIGH_SIGNAL 'A' // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
 #define DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD 125 // D input: 1 active high, 0 active low. A input: + or - #, 200 = active if above 200, -200 = active if below 200
 #define DUTY_CYCLE_HIGH_DISABLE 0 // 1 = do not calculate or display duty cycle
 //#define SETPOINT_LOW_LIMIT 67 // comment out to turn off raising, trips at this value - hysteresis
 #define SETPOINT_LOW_HYSTERESIS 1
 #define SETPOINT_DC_LOW_PIN 8 // A or D pin for raising. Output if using setpoint control, or input if monitoring duty cycle.
-#define DUTY_CYCLE_LOW_SIGNAL D // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
+#define DUTY_CYCLE_LOW_SIGNAL 'D' // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
 #define DUTY_CYCLE_LOW_SIGNAL_THRESHOLD 0 // D input: 1 active high, 0 active low. A input: + or - #, 200 = active if above 200, -200 = active if below 200
 #define DUTY_CYCLE_LOW_DISABLE 1 // 1 = do not calculate or display duty cycle
 #define SETPOINT_RESTART_DELAY 5 // cycles to wait until turning on raising/reducing after last phase ended, confirm cycle time is correct to prevent short cycling
@@ -56,6 +61,8 @@
 #define SETPOINT_HIGH_LIMIT_ALT 36 // do not define alt setpoints if regular setpoints not set, trips at this value + hysteresis
 #define SETPOINT_LOW_LIMIT_ALT 1 // trips at this value - hysteresis
 #define SETPOINT_ALT_PIN 10 // D pin for switching to alt setpoints
+//#define CODE_CHANGE_MESSAGE '' // if code is changed, enter a change message to track what was changed
+// !!! if adding a param here, also add to jsonConfig !!!
 
 // pre declare and reused ram to keep usage down
 float atemp[3]; // used for scaling TMP36 temperature sensor on A inputs, each float uses 4 bytes
@@ -192,6 +199,82 @@ hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander ch
 //  return( (val/16*10) + (val%16) );
 //}
 
+void jsonConfig() {
+  // sends out the config defines
+  SERIALP.print(F("{\"Config\": {")); // flash-memory based strings to save RAM
+  SERIALP.print(F("\"SETPOINT_HIGH_LIMIT\": \""));
+#if defined(SETPOINT_HIGH_LIMIT)
+  SERIALP.print(SETPOINT_HIGH_LIMIT);
+#else
+  SERIALP.print(F("undef"));
+#endif
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"SETPOINT_HIGH_HYSTERESIS\": \""));
+  SERIALP.print(SETPOINT_HIGH_HYSTERESIS);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"SETPOINT_DC_HIGH_PIN\": \""));
+  SERIALP.print(SETPOINT_DC_HIGH_PIN);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"DUTY_CYCLE_HIGH_SIGNAL\": \""));
+  SERIALP.print(DUTY_CYCLE_HIGH_SIGNAL);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD\": \""));
+  SERIALP.print(DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"DUTY_CYCLE_HIGH_DISABLE\": \""));
+  SERIALP.print(DUTY_CYCLE_HIGH_DISABLE);
+  SERIALP.print(F("\", "));
+  
+  SERIALP.print(F("\"SETPOINT_LOW_LIMIT\": \""));
+#if defined(SETPOINT_LOW_LIMIT)
+  SERIALP.print(SETPOINT_LOW_LIMIT);
+#else
+  SERIALP.print(F("undef"));
+#endif
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"SETPOINT_LOW_HYSTERESIS\": \""));
+  SERIALP.print(SETPOINT_LOW_HYSTERESIS);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"SETPOINT_DC_LOW_PIN\": \""));
+  SERIALP.print(SETPOINT_DC_LOW_PIN);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"DUTY_CYCLE_LOW_SIGNAL\": \""));
+  SERIALP.print(DUTY_CYCLE_LOW_SIGNAL);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"DUTY_CYCLE_LOW_SIGNAL_THRESHOLD\": \""));
+  SERIALP.print(DUTY_CYCLE_LOW_SIGNAL_THRESHOLD);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"DUTY_CYCLE_LOW_DISABLE\": \""));
+  SERIALP.print(DUTY_CYCLE_LOW_DISABLE);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"SETPOINT_RESTART_DELAY\": \""));
+  SERIALP.print(SETPOINT_RESTART_DELAY);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"DUTY_CYCLE_FRAME_SAMPLES\": \""));
+  SERIALP.print(DUTY_CYCLE_FRAME_SAMPLES);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"DUTY_CYCLE_FRAME_ROLLOVER\": \""));
+  SERIALP.print(DUTY_CYCLE_FRAME_ROLLOVER);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"SETPOINT_HIGH_LIMIT_ALT\": \""));
+  SERIALP.print(SETPOINT_HIGH_LIMIT_ALT);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"SETPOINT_LOW_LIMIT_ALT\": \""));
+  SERIALP.print(SETPOINT_LOW_LIMIT_ALT);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"SETPOINT_ALT_PIN\": \""));  
+  SERIALP.print(SETPOINT_ALT_PIN);
+  SERIALP.print(F("\", "));
+  SERIALP.print(F("\"CODE_CHANGE_MESSAGE\": \""));
+#if defined(CODE_CHANGE_MESSAGE)
+  SERIALP.print(CODE_CHANGE_MESSAGE);
+#else
+  SERIALP.print(F("undef"));
+#endif
+  SERIALP.print(F("\"")); // last item no trailing comma
+  SERIALP.println(F("}}"));
+}
+
 void timeStamp(byte output) {
   DateTime now;
   if (!(bitwise_status & BWS_NO_RTC)) {
@@ -204,7 +287,7 @@ void timeStamp(byte output) {
 
   if ((output & B00000011) == B0000001) {
     if ((bitwise_status & BWS_NO_RTC)) {
-      SERIALP.print("No RTC");
+      SERIALP.print(F("No RTC"));
       return;
     }
     if ((output & B00001000) == B00001000) {
@@ -391,7 +474,7 @@ void setup() {
   while (!Serial1) {
     ; // wait for serial port to connect. Needed for native USB port only
   }
-  #else
+#else
   Serial.begin(9600);
   while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
@@ -415,15 +498,16 @@ void setup() {
     while (1);
   }
 
-  SERIALP.println("");
   jsonTimestamp(); // start up message time
   outputSerialNumber(1); // you can remove this if not sending data to cloud service
   outputMd5Hash(1); // show the check sum of the source code
   // output compile time / version info so can see in the field
   // Used info on http://forum.arduino.cc/index.php?topic=158014.0
-  SERIALP.print(", \"Compiled\": \"" __DATE__ ", " __TIME__ ", " __VERSION__ "\"");
+  SERIALP.print(", \"Compiled\": \"" __DATE__ ", ");
+  SERIALP.print( __TIME__ ", " __VERSION__ "\"");
   SERIALP.print(", \"arduinoVariant\": \"" arduinoVariant "\"");
   SERIALP.println("}");
+  jsonConfig();
 
   // lcd.init(); // LiquidCrystal_I2C
   // lcd.backlight(); // lcd.noBacklight();
