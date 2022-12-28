@@ -11,8 +11,13 @@ filename=datalogjson.ino # file to insert hash into
 
 sed -i '/define md5HASH/d' $filename # https://www.baeldung.com/linux/delete-lines-containing-string-from-file
 md5HASH=($(md5sum $filename| cut -d ' ' -f 1)) # https://gist.github.com/baamenabar/7411d3774829590040d9
+sed -i '/define md5TIME/d' $filename
+time=$(date "+%F-%H-%M-%S")
 
 md5_define="#define md5HASH \"$md5HASH\""
 echo "$md5_define"
+md5_time="#define md5TIME \"$time\""
+echo "$md5_time"
 
+sed -i "1i $md5_time" $filename
 sed -i "1i $md5_define" $filename # https://unix.stackexchange.com/questions/99350/how-to-insert-text-before-the-first-line-of-a-file
