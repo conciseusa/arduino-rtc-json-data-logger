@@ -10,7 +10,7 @@ Even if you don't have the shield, you can add a RTC and an LCD to an Arduino an
 
 On Linux, if you get the<br>
 avrdude: ser_open(): can't open device "/dev/ttyACM0": Permission denied<br>
-error in the ArduinoIDE. Adding your uder to the dialout group will typically fix the issue.<br>
+error in the ArduinoIDE. Adding your user to the dialout group will typically fix the issue.<br>
 `sudo adduser YourUserName dialout`<br>
 logout and login
 
