@@ -1,5 +1,5 @@
-#define md5HASH "1647c8999c78169e25e2b48edbc2cd5b"
-#define md5TIME "2022-12-27-20-42-18"
+#define md5HASH "68a1352ae3cb02442ba965036372ba02"
+#define md5TIME "2022-12-30-13-19-41"
 
 // md5HASH used to know the version that is the basis for the running code.
 // In many cases the defines down below, and sometimes some code, will be modified after checking out this file,
@@ -535,7 +535,7 @@ void setup() {
     Wire.beginTransmission(address);
     error = Wire.endTransmission();
 
-    if (error == 0) {
+    if (error == 0) { // 0: success
       if (nDevices>0) {
         SERIALP.print(", ");
         lcd.print(" ");
@@ -548,12 +548,12 @@ void setup() {
       SERIALP.print(address,HEX);
       lcd.print(address,HEX);
       nDevices++;
-    } else if (error==4) {
+    } else if (error==4) { // 4: data byte transfer timeout
       if (nDevices>0) {
         SERIALP.print(", ");
         lcd.print(" ");
       }
-      SERIALP.print("Unknown error at address 0x");
+      SERIALP.print(F("Error 4 at 0x"));
       lcd.print("Error@ ");
       if (address<16) {
         SERIALP.print("0");
@@ -561,6 +561,18 @@ void setup() {
       }
       SERIALP.print(address,HEX);
       lcd.print(address,HEX);
+      nDevices++; // count all devices that send a known response
+    } else if (error!=2) { // error = 2 if no device, to see other return values
+      if (address>1) {
+        SERIALP.print(", ");
+      }
+      SERIALP.print(F("Unknown response "));
+      SERIALP.print(error);
+      SERIALP.print(F(" at 0x"));
+      if (address<16) {
+        SERIALP.print("0");
+      }
+      SERIALP.print(address,HEX);
     }
     if (nDevices==6) {
       lcd.setCursor(0, 2);
@@ -568,6 +580,7 @@ void setup() {
     if (nDevices==12) {
       lcd.setCursor(0, 3);
     }
+    delay(10); // small delay to see each transmission on a scope
   }
   lcd.setCursor(15, 3);
   lcd.print("#:");
