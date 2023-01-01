@@ -1,5 +1,5 @@
-#define md5HASH "68a1352ae3cb02442ba965036372ba02"
-#define md5TIME "2022-12-30-13-19-41"
+#define md5HASH "d0da699d81d0c26184014d62b8bffbca"
+#define md5TIME "2023-01-01-12-29-42"
 
 // md5HASH used to know the version that is the basis for the running code.
 // In many cases the defines down below, and sometimes some code, will be modified after checking out this file,
@@ -61,6 +61,7 @@
 #define SETPOINT_HIGH_LIMIT_ALT 36 // do not define alt setpoints if regular setpoints not set, trips at this value + hysteresis
 #define SETPOINT_LOW_LIMIT_ALT 1 // trips at this value - hysteresis
 #define SETPOINT_ALT_PIN 10 // D pin for switching to alt setpoints
+#define VOLTAGE_DISPLAY_PIN 4 // A pin to display voltage if space not used by duty cycle. Main use is to show the voltage of the back up battery.
 //#define CODE_CHANGE_MESSAGE '' // if code is changed, enter a change message to track what was changed
 // !!! if adding a param here, also add to jsonConfig !!!
 
@@ -74,7 +75,7 @@ float thtemp = -999; // today high temperature set so any normal reading above
 float tltemp = 999; // today low temperature set so any normal reading below
 float yhtemp = -999; // yesterday high
 float yltemp = 999; // yesterday low
-float volt_display; // used for scaling voltage
+float voltage_display = -1; // used for scaling voltage, -1 = not set
 float temp_float; // temporary float
 int temp_int; // temporary int
 unsigned int delay_sec = 0; // to track the delay between samples with out RTC
@@ -503,9 +504,9 @@ void setup() {
   outputMd5Hash(1); // show the check sum of the source code
   // output compile time / version info so can see in the field
   // Used info on http://forum.arduino.cc/index.php?topic=158014.0
-  SERIALP.print(", \"Compiled\": \"" __DATE__ ", ");
-  SERIALP.print( __TIME__ ", " __VERSION__ "\"");
-  SERIALP.print(", \"arduinoVariant\": \"" arduinoVariant "\"");
+  SERIALP.print(F(", \"Compiled\": \"" __DATE__ ", "));
+  SERIALP.print(F( __TIME__ ", " __VERSION__ "\""));
+  SERIALP.print(F(", \"arduinoVariant\": \"" arduinoVariant "\""));
   SERIALP.println("}");
   jsonConfig();
 
@@ -513,7 +514,7 @@ void setup() {
   // lcd.backlight(); // lcd.noBacklight();
   status = lcd.begin(LCD_COLS, LCD_ROWS); // cols, rows
   if(status) { // non zero status means it was unsuccesful
-    SERIALP.println("{\"Error\": \"LCD  begin command failed,\"}");
+    SERIALP.println(F("{\"Error\": \"LCD  begin command failed,\"}"));
     // hd44780 has a fatalError() routine that blinks an led if possible
     // begin() failed so blink error code using the onboard LED if possible
     // hd44780::fatalError(status); // does not return, uncomment if needed to troubleshoot LCD
@@ -524,9 +525,9 @@ void setup() {
   byte error, address;
   int nDevices;
  
-  SERIALP.print("{\"I2C devices\": \"");
+  SERIALP.print(F("{\"I2C devices\": \""));
   lcd.setCursor(0, 0);
-  lcd.print("I2C devices:");
+  lcd.print(F("I2C devices:"));
   lcd.setCursor(0, 1);
  
   nDevices = 0;
@@ -585,7 +586,7 @@ void setup() {
   lcd.setCursor(15, 3);
   lcd.print("#:");
   lcd.print(nDevices);
-  SERIALP.print("\", \"Number I2C devices\": ");
+  SERIALP.print(F("\", \"Number I2C devices\": "));
   SERIALP.print(nDevices);
   SERIALP.println("}");
   delay(3000);
@@ -776,7 +777,7 @@ void loop() {
   lcd.print(' ');
 #else 
   lcd.print(" V");
-  lcd.print(volt_display, 1); // show battery, or what is in volt_display
+  lcd.print(voltage_display, 1); // show battery, or what is in voltage_display
 #endif
 
   if (!(bitwise_status & BWS_NO_RTC)) {
@@ -819,7 +820,7 @@ void loop() {
       // SERIALP.print(atemp[pin]); this line will output C
       atemp[pin] = (atemp[pin] * 9.0 / 5.0) + 32.0; // now convert to Fahrenheit
       SERIALP.print(atemp[pin]); // output tempF
-    } else if (pin == 200) { // 5V FS no input voltage divider on 5V ioref
+    } else if (pin == 200) { // 5V FS no input voltage divider on 5V ioref, pin == 200 - disable
       temp_int = analogRead(pin);
       SERIALP.print(temp_int); // output raw value
       temp_float = temp_int;
@@ -828,7 +829,7 @@ void loop() {
       SERIALP.print(pin);
       SERIALP.print("volt\": ");
       SERIALP.print(temp_float);
-    } else if (pin == 1 || pin == 2 || pin == 3 || pin == 4 || pin == 5 || pin == 6 || pin == 7) { // 40.75V FS input 71.5K/10K on 5V ioref
+    } else if (pin == 1 || pin == 2 || pin == 3 || pin == 4 || pin == 5 || pin == 6 || pin == 7) { // 40.75V FS input 71.5K/10K on 5V ioref, default if not already used
       temp_int = analogRead(pin);
       SERIALP.print(temp_int); // output raw value
       temp_float = temp_int<<2;
@@ -837,8 +838,8 @@ void loop() {
       SERIALP.print(pin);
       SERIALP.print("volt\": ");
       SERIALP.print(temp_float);
-      if (pin == 1) {
-        volt_display = temp_float; // volt to show in LCD if duty cycle calc turned off
+      if (pin == VOLTAGE_DISPLAY_PIN) {
+        voltage_display = temp_float; // voltage to show in LCD if duty cycle calc turned off
       }
     } else {
       SERIALP.print(analogRead(pin)); // if no special treatment, send raw value
@@ -849,7 +850,7 @@ void loop() {
   }
 
   if (!(bitwise_status & BWS_NO_RTC)) {
-    SERIALP.print(", \"RTCTEMP\": ");
+    SERIALP.print(F(", \"RTCTEMP\": "));
     SERIALP.print(rtc.getTemperature());
   }
 
@@ -866,15 +867,15 @@ void loop() {
   }
 
 #if DUTY_CYCLE_LOW_DISABLE == 0
-  SERIALP.print(", \"duty_cycle_raising\": ");
+  SERIALP.print(F(", \"duty_cycle_raising\": "));
   SERIALP.print(duty_cycle_raising);
 #endif
 #if DUTY_CYCLE_HIGH_DISABLE == 0
-  SERIALP.print(", \"duty_cycle_reducing\": ");
+  SERIALP.print(F(", \"duty_cycle_reducing\": "));
   SERIALP.print(duty_cycle_reducing);
 #endif
 #if DUTY_CYCLE_LOW_DISABLE == 0 || DUTY_CYCLE_HIGH_DISABLE == 0
-  SERIALP.print(", \"duty_cycle_total_count\": ");
+  SERIALP.print(F(", \"duty_cycle_total_count\": "));
   SERIALP.print(duty_cycle_total_count);
 #endif
 
@@ -902,7 +903,7 @@ void loop() {
   lcd.print(' ');
 #else
   lcd.print(" V");
-  lcd.print(volt_display, 1); // show battery, or what is in volt_display
+  lcd.print(voltage_display, 1); // show battery, or what is in voltage_display
 #endif
 
   // check if we have new high or lows
@@ -927,7 +928,7 @@ void loop() {
     }
     lcd.print(now.day(), DEC);
   } else {
-    lcd.print("No RTC  ");
+    lcd.print(F("No RTC  "));
   }
 
   lcd.print(" H");
@@ -1047,11 +1048,11 @@ void loop() {
 
 #if DUTY_CYCLE_LOW_DISABLE == 0 || DUTY_CYCLE_HIGH_DISABLE == 0
 #if DUTY_CYCLE_HIGH_DISABLE == 0
-  SERIALP.print(", \"duty_cycle_reducing_count\": "); // useful for troubleshooting
+  SERIALP.print(F(", \"duty_cycle_reducing_count\": ")); // useful for troubleshooting
   SERIALP.print(duty_cycle_reducing_count);
 #endif
 #if DUTY_CYCLE_LOW_DISABLE == 0
-  SERIALP.print(", \"duty_cycle_raising_count\": "); // useful for troubleshooting
+  SERIALP.print(F(", \"duty_cycle_raising_count\": ")); // useful for troubleshooting
   SERIALP.print(duty_cycle_raising_count);
 #endif
   if (duty_cycle_total_count >= DUTY_CYCLE_FRAME_SAMPLES) { // rollover so old samples fade
