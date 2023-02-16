@@ -178,12 +178,12 @@ hd44780_I2Cexp lcd; // declare lcd object: auto locate & auto config expander ch
 #if defined(LCD_COLS) && LCD_COLS == 20
   void clearLCDline(byte line) {
     lcd.setCursor(0, line);
-    lcd.print("                    ");
+    lcd.print(F("                    "));
   }
 #else
   void clearLCDline(byte line) {
     lcd.setCursor(0, line);
-    lcd.print("                ");
+    lcd.print(F("                "));
   }
 #endif
 
@@ -319,7 +319,7 @@ void timeStamp(byte output) {
     }
   } else {
     if ((bitwise_status & BWS_NO_RTC)) {
-      lcd.print("No RTC");
+      lcd.print(F("No RTC"));
       return;
     }
     if ((output & B00001000) == B00001000) {
@@ -353,7 +353,7 @@ void timeStamp(byte output) {
 
 void jsonTimestamp() {
   // starts off the json line with a timestamp
-  SERIALP.print("{\"Time\": \""); // {"Time": "2020-5-14T15:00:06"
+  SERIALP.print(F("{\"Time\": \"")); // {"Time": "2020-5-14T15:00:06"
   timeStamp(13);
   SERIALP.print("\"");
 }
@@ -778,6 +778,7 @@ void loop() {
 #else 
   lcd.print(" V");
   lcd.print(voltage_display, 1); // show battery, or what is in voltage_display
+  lcd.print(' ');
 #endif
 
   if (!(bitwise_status & BWS_NO_RTC)) {
@@ -904,6 +905,7 @@ void loop() {
 #else
   lcd.print(" V");
   lcd.print(voltage_display, 1); // show battery, or what is in voltage_display
+  lcd.print(' ');
 #endif
 
   // check if we have new high or lows
