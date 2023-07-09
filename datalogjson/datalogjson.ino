@@ -1,5 +1,5 @@
-#define md5HASH "d0da699d81d0c26184014d62b8bffbca"
-#define md5TIME "2023-01-01-12-29-42"
+#define md5HASH "e01e707bd77962cfa57079ca11211c8b"
+#define md5TIME "2023-07-09-13-44-16"
 
 // md5HASH used to know the version that is the basis for the running code.
 // In many cases the defines down below, and sometimes some code, will be modified after checking out this file,
@@ -47,7 +47,7 @@
 #define SETPOINT_DC_HIGH_PIN 3 // A or D pin for reducing. Output if using setpoint control, or input if monitoring duty cycle.
 #define DUTY_CYCLE_HIGH_SIGNAL 'A' // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
 #define DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD 125 // D input: 1 active high, 0 active low. A input: + or - #, 200 = active if above 200, -200 = active if below 200
-#define DUTY_CYCLE_HIGH_DISABLE 0 // 1 = do not calculate or display duty cycle
+#define DUTY_CYCLE_HIGH_DISABLE 1 // 1 = do not calculate or display duty cycle
 //#define SETPOINT_LOW_LIMIT 67 // comment out to turn off raising, trips at this value - hysteresis
 #define SETPOINT_LOW_HYSTERESIS 1
 #define SETPOINT_DC_LOW_PIN 8 // A or D pin for raising. Output if using setpoint control, or input if monitoring duty cycle.
@@ -160,7 +160,7 @@ byte bitwise_status = 0b01000000;
 #endif
 
 #include "RTClib.h" // Adafruit  https://www.arduino.cc/reference/en/libraries/rtclib/
-#include <hd44780.h> // Extensible hd44780 in library manager - https://github.com/duinoWitchery/hd44780 - worked on Due
+#include <hd44780.h> // Extensible hd44780 in library manager - https://github.com/duinoWitchery/hd44780 bperrybap - worked on Due
 #include <hd44780ioClass/hd44780_I2Cexp.h> // i2c expander i/o class header
 // #include "SparkFun_External_EEPROM.h" // https://github.com/sparkfun/SparkFun_External_EEPROM_Arduino_Library
 
