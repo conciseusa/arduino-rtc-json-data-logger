@@ -42,10 +42,10 @@
 // !! if doing refrigeration control, there can be many issues to be aware of !!
 // !! SETPOINT_RESTART_DELAY and HYSTERESIS are trying to address the short cycle issue !!
 // !! this page mentions how a delay can solve the short cycle issue http://www.refrigerationbasics.com/RBIII/controls5.htm !!
-//#define SETPOINT_HIGH_LIMIT 68 // trips at this value + hysteresis, comment out to turn off reducing, will still monitor duty cycle, if commented out, coment out alt setpoint
+//#define SETPOINT_HIGH_LIMIT 70 // trips at this value + hysteresis, comment out to turn off reducing, will still monitor duty cycle, if commented out, coment out alt setpoint
 #define SETPOINT_HIGH_HYSTERESIS 3 // hysteresis setup to go past setpoint (away from other setpoint) to reduce ringing when hysteresis and setpoint gap is small
-#define SETPOINT_DC_HIGH_PIN 3 // A or D pin for reducing. Output if using setpoint control, or input if monitoring duty cycle.
-#define DUTY_CYCLE_HIGH_SIGNAL 'A' // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
+#define SETPOINT_DC_HIGH_PIN 9 // A or D pin for reducing. Output if using setpoint control, or input if monitoring duty cycle.
+#define DUTY_CYCLE_HIGH_SIGNAL 'D' // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
 #define DUTY_CYCLE_HIGH_SIGNAL_THRESHOLD 125 // D input: 1 active high, 0 active low. A input: + or - #, 200 = active if above 200, -200 = active if below 200
 #define DUTY_CYCLE_HIGH_DISABLE 1 // 1 = do not calculate or display duty cycle
 //#define SETPOINT_LOW_LIMIT 67 // comment out to turn off raising, trips at this value - hysteresis
@@ -54,7 +54,7 @@
 #define DUTY_CYCLE_LOW_SIGNAL 'D' // D = digital output if setpoint control or input if monitoring. A = analog input if monitoring.
 #define DUTY_CYCLE_LOW_SIGNAL_THRESHOLD 0 // D input: 1 active high, 0 active low. A input: + or - #, 200 = active if above 200, -200 = active if below 200
 #define DUTY_CYCLE_LOW_DISABLE 1 // 1 = do not calculate or display duty cycle
-#define SETPOINT_RESTART_DELAY 5 // cycles to wait until turning on raising/reducing after last phase ended, confirm cycle time is correct to prevent short cycling
+#define SETPOINT_RESTART_DELAY 0 // cycles to wait until turning on raising/reducing after last phase ended, confirm cycle time is correct to prevent short cycling
 #define DUTY_CYCLE_FRAME_SAMPLES 200 // number of samples in a duty cycle calculation time frame, roll to next frame when full
 #define DUTY_CYCLE_FRAME_ROLLOVER .2 // the amount of the next frame to seed with the current duty cycle
 // alt setpoints, common use is setpoints to hold temp at about 70F for fermentation, alt setpoint to hold temp at 40F or below for refrigeration
@@ -103,6 +103,9 @@ byte bitwise_status = 0b01000000;
   #define digitalPins 14
   #define ioref 5.0f // operating voltage on an Uno, float becaused coud be 3.3 and used to scale A/D converter
 #endif
+
+// https://github.com/arduino/ArduinoCore-renesas/blob/main/boards.txt
+// ARDUINO_UNOR4_MINIMA and ARDUINO_UNOR4_WIFI
 
 #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega16U4__)
   // Code in here will only be compiled if an Arduino Leonardo is used.
@@ -988,13 +991,13 @@ void loop() {
 
 #if defined(SETPOINT_HIGH_LIMIT)
   if (digitalRead(SETPOINT_ALT_PIN) != 0) {
-    check_setpoint_high(SETPOINT_HIGH_LIMIT);
+    check_setpoint_high(SETPOINT_HIGH_LIMIT); // if DUTY_CYCLE_HIGH_SIGNAL 'A' this will error, set to D
   }
 #endif
 
 #if defined(SETPOINT_LOW_LIMIT)
   if (digitalRead(SETPOINT_ALT_PIN) != 0) {
-    check_setpoint_low(SETPOINT_LOW_LIMIT);
+    check_setpoint_low(SETPOINT_LOW_LIMIT); // if DUTY_CYCLE_LOW_SIGNAL 'A' this will error, set to D
   }
 #endif
 
